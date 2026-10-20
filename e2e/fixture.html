@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WPA E2E fixture</title>
+  <script>
+    window.__blockedLoaded = false;
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; }
+    #hero { max-width: 640px; font-size: 32px; font-weight: 700; }
+    #shift { margin-top: 16px; padding: 16px; background: #eef2ff; }
+    #btn { margin-top: 16px; padding: 10px 16px; font-size: 16px; }
+    #spacer { height: 600px; }
+  </style>
+</head>
+<body>
+  <p id="hero">Web Performance Auditor test page</p>
+  <div id="shift">This block shifts after the first paint.</div>
+  <button id="btn" type="button">Run interaction</button>
+  <div id="spacer"></div>
+
+  <script src="http://blocked.test:__PORT__/blocked.js"></script>
+  <script>
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('shift').style.marginTop = '220px';
+      }, 350);
+
+      setTimeout(() => {
+        const start = performance.now();
+        while (performance.now() - start < 140) {
+          // Deliberate long task for the collector.
+        }
+      }, 600);
+    });
+
+    document.getElementById('btn').addEventListener('click', () => {
+      const start = performance.now();
+      while (performance.now() - start < 180) {
+        // Deliberate slow handler so INP has a measurable value.
+      }
+      document.getElementById('btn').textContent = 'Interaction done';
+    });
+  </script>
+</body>
+</html>

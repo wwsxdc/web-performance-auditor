@@ -1,0 +1,62 @@
+{
+  "name": "web-performance-auditor",
+  "version": "0.1.0",
+  "description": "Chrome extension for local Core Web Vitals auditing with DOM attribution and experiments.",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "chrome-extension",
+    "core-web-vitals",
+    "performance",
+    "web-vitals",
+    "manifest-v3"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "node e2e/e2e.mjs",
+    "test:e2e": "npm run build && npm run e2e",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "idb": "^8.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^3.10.1",
+    "web-vitals": "^4.2.0"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@eslint/js": "^9.17.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/chrome": "^0.0.300",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "fake-indexeddb": "^6.0.0",
+    "globals": "^15.14.0",
+    "puppeteer-core": "^25.14.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.18.0",
+    "vite": "^6.0.0",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.25.12": true
+  }
+}
