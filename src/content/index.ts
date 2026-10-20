@@ -369,6 +369,7 @@ if (!isAlreadyActive()) {
 
       switch ((message as { type?: unknown }).type) {
         case 'COLLECTOR_STOP':
+          clearHighlight();
           window.postMessage({ type: 'WPA_COLLECTOR_STOP' }, getTargetOrigin());
           sendResponse({ success: true });
           break;

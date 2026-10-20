@@ -19,10 +19,10 @@ export function ErrorView({ status, message, children }: ErrorViewProps) {
 
   const suggestion = isPermission
     ? 'Убедитесь, что у расширения есть разрешение на доступ к этому сайту в настройках расширений.'
-    : 'Откройте любую веб-страницу по адресу http:// или https:// и попробуйте снова.';
+    : 'Откройте любую веб-страницу по адресу http:// или https:// и нажмите «Аудит» вверху.';
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-gray-50">
+    <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
       <h2 className="text-lg font-bold text-gray-900 mb-2">{title}</h2>
       <p className="text-sm text-gray-600 max-w-sm mb-4">{description}</p>
       <p className="text-xs text-gray-400 max-w-sm">{suggestion}</p>

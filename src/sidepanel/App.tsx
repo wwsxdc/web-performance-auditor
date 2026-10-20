@@ -222,9 +222,18 @@ export default function App() {
 
   if (collectorStatus === 'unsupported' || collectorStatus === 'permission-denied') {
     return (
-      <ErrorView status={collectorStatus} message={state?.error}>
-        <DataCleanup onCleared={handleCleared} />
-      </ErrorView>
+      <div className="flex min-h-screen flex-col bg-gray-50 p-4">
+        <Header
+          url={state?.activeTabUrl}
+          status={collectorStatus}
+          sessionStartedAt={session?.startedAt}
+          onStart={startSession}
+          onStop={() => void stopSession()}
+        />
+        <ErrorView status={collectorStatus} message={state?.error}>
+          <DataCleanup onCleared={handleCleared} />
+        </ErrorView>
+      </div>
     );
   }
 

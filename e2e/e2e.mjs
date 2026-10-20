@@ -125,6 +125,33 @@ async function main() {
 
     const getState = async () => (await send('GET_STATE'))?.state;
 
+    const panelTabId = await panel.evaluate(async () => (await chrome.tabs.getCurrent())?.id);
+    const unsupportedStart = await send('SESSION_START', { tabId: panelTabId });
+    check(
+      'UNSUPPORTED_START',
+      unsupportedStart?.accessible === false && typeof unsupportedStart?.error === 'string',
+      JSON.stringify(unsupportedStart),
+    );
+    const unsupportedState = await getState();
+    check(
+      'UNSUPPORTED_STATUS',
+      unsupportedState?.collectorStatus === 'unsupported' && unsupportedState?.session === null,
+      `status=${unsupportedState?.collectorStatus}, session=${unsupportedState?.session?.id ?? 'null'}`,
+    );
+    await panel.waitForFunction(
+      () => document.body.innerText.includes('Страница не поддерживается'),
+      { timeout: 5000 },
+    );
+    const unsupportedPanel = await panel.evaluate(() => ({
+      text: document.body.innerText,
+      hasStart: Boolean(document.querySelector('button[aria-label="Начать аудит"]')),
+    }));
+    check(
+      'UNSUPPORTED_RETRY_VISIBLE',
+      unsupportedPanel.text.includes('Страница не поддерживается') && unsupportedPanel.hasStart,
+      'header start control remains available',
+    );
+
     const tabId = await panel.evaluate((origin) => {
       return chrome.tabs
         .query({})
@@ -138,6 +165,26 @@ async function main() {
       'SESSION_START',
       start?.session?.status === 'active' && start?.accessible === true,
       `session=${start?.session?.id?.slice(0, 8)}`,
+    );
+    const recoveredState = await getState();
+    await panel.waitForFunction(
+      () =>
+        !document.body.innerText.includes('Страница не поддерживается') &&
+        Boolean(document.querySelector('button[aria-label="Остановить наблюдение"]')),
+      { timeout: 5000 },
+    );
+    const recoveredPanel = await panel.evaluate(() => ({
+      text: document.body.innerText,
+      hasStop: Boolean(document.querySelector('button[aria-label="Остановить наблюдение"]')),
+    }));
+    check(
+      'UNSUPPORTED_RECOVERY',
+      (recoveredState?.collectorStatus === 'initializing' ||
+        recoveredState?.collectorStatus === 'collecting') &&
+        recoveredState?.session?.id === start?.session?.id &&
+        recoveredPanel.hasStop &&
+        !recoveredPanel.text.includes('Страница не поддерживается'),
+      `status=${recoveredState?.collectorStatus}`,
     );
 
     await target.bringToFront();
@@ -412,11 +459,45 @@ async function main() {
       `metrics=${report?.metrics?.length ?? 0}, attribution=${report?.attribution?.length ?? 0}`,
     );
 
+    const historySession = await send('SESSION_START', { tabId });
+    check(
+      'HISTORY_SESSION_START',
+      historySession?.session?.status === 'active' && historySession?.accessible === true,
+      `session=${historySession?.session?.id?.slice(0, 8)}`,
+    );
+    const historyHighlight = await send('HIGHLIGHT_TARGET', {
+      tabId,
+      target: {
+        targetId: 'e2e-history-lcp',
+        selector: '#hero',
+        color: 'green',
+        label: 'LCP · history',
+        metricName: 'LCP',
+      },
+    });
+    await sleep(200);
+    const overlaysBeforeHistoryClear = await target.evaluate(
+      () => document.querySelectorAll('[id^="wpa-diagnostic-overlay"]').length,
+    );
+    check(
+      'HISTORY_CLEAR_OVERLAY_SETUP',
+      historyHighlight?.available === true && overlaysBeforeHistoryClear > 0,
+      `hosts=${overlaysBeforeHistoryClear}`,
+    );
+
     const cleared = await send('CLEAR_HISTORY');
     check(
       'CLEAR_HISTORY',
       cleared?.success === true && cleared?.rulesPurged === true,
       JSON.stringify(cleared),
+    );
+    const overlaysAfterHistoryClear = await target.evaluate(
+      () => document.querySelectorAll('[id^="wpa-diagnostic-overlay"]').length,
+    );
+    check(
+      'HISTORY_CLEAR_OVERLAYS',
+      overlaysAfterHistoryClear === 0,
+      `hosts=${overlaysAfterHistoryClear}`,
     );
     const afterClear = await getState();
     check(

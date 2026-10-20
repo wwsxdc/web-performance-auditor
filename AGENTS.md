@@ -88,7 +88,23 @@ Message and domain types are centralized in `src/types/` (`messages.ts`,
   React component tests still need `jsdom` added.
 - `@crxjs/vite-plugin` is a `2.0.0-beta` — MV3/CRXJS behavior (HMR, web
   accessible resources, SW reload) can differ from stable Vite plugins.
-- No git repo initialized and no CI. Use `npm run verify` as the verification loop.
+- Git remote `origin` and GitHub Actions CI are configured; `main` is the default
+  branch. Use `npm run verify` as the verification loop.
 - On Windows PowerShell, `npm.ps1` may be blocked by execution policy; invoke
   `npm.cmd` instead (and prepend `C:\Program Files\nodejs` to `PATH` if Node is
   not already visible in the shell).
+
+## Git workflow
+
+After a code review returns a positive verdict:
+
+1. Run `npm run verify`; for UI, background, content-script, or E2E changes also
+   run the E2E suite.
+2. Commit the reviewed changes with a concise message and push to `origin/main`.
+   Do not wait for a separate publish prompt.
+3. If verification or review finds a problem, fix it and create a new commit;
+   never amend or force-push published history.
+
+The reviewer remains read-only. The main agent (or a dedicated publisher) performs
+the commit and push after the review passes. Never commit `ТЗ.txt`, `.opencode/`,
+`node_modules/`, `dist/`, `public/generated/`, or secrets.
