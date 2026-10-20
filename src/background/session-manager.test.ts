@@ -1,8 +1,9 @@
 ﻿import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SessionManager } from './session-manager';
+import { RESTORE_NAVIGATION_GRACE_MS, SessionManager } from './session-manager';
 import * as storage from './storage';
 import { validateJsonReport } from '../utils/report-schema';
+import { STORAGE_LIMITS } from '../constants/config';
 
 const localStore = new Map<string, unknown>();
 
@@ -19,7 +20,10 @@ const chromeMock = {
     },
   },
   tabs: {
-    get: vi.fn(async (id: number) => ({ id, url: 'https://example.com/' })),
+    get: vi.fn(async (id: number) => {
+      const pointer = localStore.get('activeSession') as { url?: string } | undefined;
+      return { id, url: pointer?.url ?? 'https://example.com/' };
+    }),
     query: vi.fn(async () => []),
   },
   runtime: {
@@ -62,6 +66,27 @@ describe('SessionManager', () => {
       'unsupported',
     );
     expect(report?.limitations.some((item) => item.startsWith('FCP'))).toBe(true);
+  });
+
+  it('consolidates repeated callbacks for one metric instance in exports', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    await manager.addMetric(
+      { id: 'u1', metricId: 'lcp-instance', name: 'LCP', value: 2000, observedAt: 1000 },
+      1,
+    );
+    await manager.addMetric(
+      { id: 'u2', metricId: 'lcp-instance', name: 'LCP', value: 2500, observedAt: 2000 },
+      1,
+    );
+
+    const report = await manager.generateReport(session.id);
+    const state = await manager.getState();
+
+    expect(report?.metrics).toHaveLength(1);
+    expect(report?.metrics[0]?.value).toBe(2500);
+    expect(state.session?.metrics).toHaveLength(2);
   });
 
   it('exports sanitized attribution and a schema-valid report', async () => {
@@ -332,8 +357,13 @@ describe('SessionManager', () => {
     const spaNavigation = report?.session.navigations.find(
       (navigation) => navigation.kind === 'spa',
     );
-    expect(report?.events).toHaveLength(1);
-    expect(report?.events[0]?.navigationId).toBe(spaNavigation?.id);
+    const longTasks = report?.events.filter((event) => event.type === 'long-task') ?? [];
+    const spaEvents = report?.events.filter((event) => event.type === 'spa-navigation') ?? [];
+    expect(longTasks).toHaveLength(1);
+    expect(longTasks[0]?.navigationId).toBe(spaNavigation?.id);
+    expect(spaEvents).toHaveLength(1);
+    expect(spaEvents[0]?.navigationId).toBe(spaNavigation?.id);
+    expect(spaEvents[0]?.details?.url).toBe('https://example.com/app/settings');
     expect(session.navigations[0]?.id).not.toBe(spaNavigation?.id);
   });
 
@@ -367,6 +397,157 @@ describe('SessionManager', () => {
       'document',
       'document',
     ]);
+  });
+
+  it('keeps a restored session when the tab URL changed while asleep', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/');
+    await first.addEvent(
+      { id: 'old-event', type: 'long-task', timestamp: 1000, duration: 50 },
+      1,
+      'doc-a',
+    );
+    chromeMock.tabs.get.mockResolvedValueOnce({
+      id: 1,
+      url: 'https://example.com/other',
+    });
+
+    const restored = new SessionManager();
+    await restored.restore();
+
+    const state = await restored.getState();
+    expect(state.session?.status).toBe('active');
+    expect(state.collectorStatus).toBe('initializing');
+    expect(restored.isActiveForTab(1)).toBe(true);
+
+    // The segment must come from the queued navigation, not from a URL guess.
+    await restored.addMetric({ id: 'stale', name: 'LCP', value: 900, observedAt: 900 }, 1, 'doc-b');
+    expect((await restored.generateReport(session.id))?.metrics).toHaveLength(0);
+
+    const navigated = await restored.handleNavigation(
+      1,
+      'https://example.com/other',
+      'document',
+    );
+    expect(navigated).toBe(true);
+    await restored.addMetric({ id: 'new', name: 'LCP', value: 1200, observedAt: 1200 }, 1, 'doc-b');
+
+    const report = await restored.generateReport(session.id);
+    expect(report?.session.navigations.map((navigation) => navigation.kind)).toEqual([
+      'document',
+      'document',
+    ]);
+    expect(report?.metrics.map((metric) => rawId(metric.id))).toEqual(['new']);
+  });
+
+  it('interrupts a restored session when the URL change never gets a navigation event', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/');
+    await first.addEvent(
+      { id: 'old-event', type: 'long-task', timestamp: 1000, duration: 50 },
+      1,
+      'doc-a',
+    );
+    chromeMock.tabs.get.mockResolvedValueOnce({
+      id: 1,
+      url: 'https://example.com/other',
+    });
+
+    const restored = new SessionManager();
+    await restored.restore();
+    expect((await restored.getState()).session?.status).toBe('active');
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, RESTORE_NAVIGATION_GRACE_MS + 600),
+    );
+
+    const report = await restored.generateReport(session.id);
+    expect(report?.session.status).toBe('interrupted');
+    expect(restored.isActiveForTab(1)).toBe(false);
+  });
+
+  it('attributes load-metric updates to the document segment after SPA navigation', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/app');
+    const documentNavigationId = session.navigations[0]?.id;
+    await manager.handleNavigation(1, 'https://example.com/app/settings', 'spa');
+    const spaNavigationId = (await manager.generateReport(session.id))?.session.navigations[1]?.id;
+
+    await manager.addEvent(
+      { id: 'lcp-update', type: 'metric-update', timestamp: 2000, details: { metric: 'LCP' } },
+      1,
+    );
+    await manager.addEvent(
+      { id: 'cls-update', type: 'metric-update', timestamp: 2001, details: { metric: 'CLS' } },
+      1,
+    );
+
+    const report = await manager.generateReport(session.id);
+    const lcpEvent = report?.events.find((event) => rawId(event.id) === 'lcp-update');
+    const clsEvent = report?.events.find((event) => rawId(event.id) === 'cls-update');
+    expect(lcpEvent?.navigationId).toBe(documentNavigationId);
+    expect(clsEvent?.navigationId).toBe(spaNavigationId);
+  });
+
+  it('records a same-URL reload as a new document segment', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/page');
+
+    const changed = await manager.handleNavigation(
+      1,
+      'https://example.com/page',
+      'document',
+      'reload',
+    );
+
+    expect(changed).toBe(true);
+    const report = await manager.generateReport(session.id);
+    expect(report?.session.navigations.map((navigation) => navigation.kind)).toEqual([
+      'document',
+      'document',
+    ]);
+  });
+
+  it('records repeated SPA transitions to the same URL as separate segments', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/app');
+
+    await manager.handleNavigation(1, 'https://example.com/app', 'spa');
+    await manager.handleNavigation(1, 'https://example.com/app', 'spa');
+
+    const report = await manager.generateReport(session.id);
+    expect(report?.session.navigations.map((navigation) => navigation.kind)).toEqual([
+      'document',
+      'spa',
+      'spa',
+    ]);
+    expect(report?.events.filter((event) => event.type === 'spa-navigation')).toHaveLength(2);
+  });
+
+  it('enforces the per-session metric limit', async () => {
+    const originalLimit = STORAGE_LIMITS.maxMetricsPerSession;
+    STORAGE_LIMITS.maxMetricsPerSession = 3;
+    try {
+      const manager = new SessionManager();
+      const session = await manager.startSession(1, 'https://example.com/');
+
+      for (let index = 0; index < 5; index++) {
+        await manager.addMetric(
+          {
+            id: `m${index}`,
+            name: 'LCP',
+            value: 1000 + index,
+            observedAt: 1000 + index,
+          },
+          1,
+        );
+      }
+
+      const report = await manager.generateReport(session.id);
+      expect(report?.metrics).toHaveLength(3);
+    } finally {
+      STORAGE_LIMITS.maxMetricsPerSession = originalLimit;
+    }
   });
 
   it('keeps processing queued operations after one fails', async () => {

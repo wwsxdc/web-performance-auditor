@@ -353,6 +353,11 @@ async function main() {
       afterSpa.session.navigations.some((navigation) => navigation.kind === 'spa'),
       `segments=${afterSpa.session.navigations.length}`,
     );
+    check(
+      'SPA_NAVIGATION_EVENT',
+      afterSpa.session.events.some((event) => event.type === 'spa-navigation'),
+      `events=${afterSpa.session.events.length}`,
+    );
 
     const baselineSessionId = afterSpa.session.id;
     // Bring the audited tab to front BEFORE the experimental reload: LCP/CLS

@@ -188,6 +188,11 @@ export async function countEvents(sessionId: string): Promise<number> {
   return db.countFromIndex('events', 'by-session', sessionId);
 }
 
+export async function countMetrics(sessionId: string): Promise<number> {
+  const db = await getDb();
+  return db.countFromIndex('metrics', 'by-session', sessionId);
+}
+
 export async function getAllSessions(): Promise<StoredSession[]> {
   const db = await getDb();
   return db.getAll('sessions') as Promise<StoredSession[]>;

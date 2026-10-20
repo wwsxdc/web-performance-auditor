@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { generateId } from '../../utils/id';
+import { sendRuntimeMessage } from '../api';
 
 interface MarkdownExportButtonProps {
   sessionId: string;
@@ -19,12 +20,12 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
   const fetchMarkdown = useCallback(async () => {
     setBusy(true);
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<{ markdown?: string }>({
         type: 'EXPORT_MARKDOWN',
         requestId: generateId(),
         sessionId,
         experimentId,
-      })) as { markdown?: string } | undefined;
+      });
       if (response?.markdown) {
         setMarkdown(response.markdown);
         return response.markdown;

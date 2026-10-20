@@ -125,7 +125,12 @@ chrome.webNavigation.onCommitted.addListener((details) => {
       return;
     }
 
-    await sessionManager.handleNavigation(details.tabId, details.url, 'document');
+    await sessionManager.handleNavigation(
+      details.tabId,
+      details.url,
+      'document',
+      details.transitionType,
+    );
     await reinjectIfActive(details.tabId);
   })().catch(console.error);
 });

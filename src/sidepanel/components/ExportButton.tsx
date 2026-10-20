@@ -1,5 +1,6 @@
 ﻿import { useCallback, useState } from 'react';
 import { generateId } from '../../utils/id';
+import { sendRuntimeMessage } from '../api';
 
 interface ExportButtonProps {
   sessionId: string;
@@ -13,11 +14,14 @@ export function ExportButton({ sessionId }: ExportButtonProps) {
     setExporting(true);
     setError(null);
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<{
+        report?: unknown;
+        error?: string;
+      }>({
         type: 'EXPORT_JSON',
         requestId: generateId(),
         sessionId,
-      })) as { report?: unknown; error?: string } | undefined;
+      });
 
       if (response?.error) {
         setError(response.error);

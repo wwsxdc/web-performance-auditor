@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { generateId } from '../../utils/id';
+import { sendRuntimeMessage } from '../api';
 
 interface DataCleanupProps {
   onCleared: () => Promise<void> | void;
@@ -24,10 +25,13 @@ export function DataCleanup({ onCleared }: DataCleanupProps) {
     setBusy(true);
     setError(undefined);
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<{
+        error?: string;
+        rulesPurged?: boolean;
+      }>({
         type: 'CLEAR_HISTORY',
         requestId: generateId(),
-      })) as { error?: string; rulesPurged?: boolean } | undefined;
+      });
       if (response?.error) {
         setError(response.error);
         return;

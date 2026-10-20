@@ -639,13 +639,13 @@ function sendUnsupported(name: MetricName): void {
 
 function reportUnsupportedMetrics(): void {
   const supported = getCapabilities();
-  if (supported.length === 0) return;
 
   const requiredTypes: Array<{ name: MetricName; entryType: string }> = [
     { name: 'LCP', entryType: 'largest-contentful-paint' },
     { name: 'CLS', entryType: 'layout-shift' },
     { name: 'INP', entryType: 'event' },
     { name: 'FCP', entryType: 'paint' },
+    { name: 'TTFB', entryType: 'navigation' },
   ];
 
   for (const { name, entryType } of requiredTypes) {
@@ -854,6 +854,7 @@ function initCollector(): CollectorHandle {
     if (stopped) return;
     const updateId = generateId();
     const observedAt = Date.now();
+    const previous = latest.get(metric.name);
     latest.set(metric.name, {
       metric,
       source: 'web-vitals',
@@ -861,6 +862,20 @@ function initCollector(): CollectorHandle {
       updateId,
       observedAt,
     });
+    if (previous) {
+      sendToExtension('EVENT', {
+        eventId: generateId(),
+        eventType: 'metric-update',
+        timestamp: observedAt,
+        details: {
+          metric: metric.name,
+          metricId: metric.id,
+          value: metric.value,
+          delta: metric.delta,
+          rating: metric.rating,
+        },
+      });
+    }
     sendMetric(metric, 'web-vitals', updateId, attribution, observedAt);
   };
 

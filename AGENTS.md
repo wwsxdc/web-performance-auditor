@@ -17,9 +17,10 @@ npm install        # deps are installed locally; package-lock.json is generated
 npm run dev        # Vite dev server, STRICT port 5173 (HMR also on 5173)
 npm run build      # tsc --noEmit && vite build  -> dist/
 npm run typecheck  # tsc --noEmit
-npm test           # vitest run (unit tests in src/utils)
+npm test           # vitest run (unit tests across src/)
 npm run lint       # eslint src/ (flat config: eslint.config.js)
 npm run verify     # typecheck + lint + test + build
+npm run test:e2e   # build + Puppeteer E2E (use HEADLESS=1 for CI)
 ```
 
 To run the extension: `npm run build`, then load `dist/` as an unpacked extension
@@ -39,8 +40,12 @@ Three isolated script contexts — this is the core of the design:
    has **no `chrome.*` access**. Collects metrics with `web-vitals`
    (`reportAllChanges: true`) and sends them via `window.postMessage` with a
    `WPA_`-prefixed `type`. Guards against double injection with a window global.
+   Repeated callbacks update the same metric instance and emit a `metric-update`
+   diagnostic event instead of being treated as independent measurements.
 3. **Content script (ISOLATED world)** — `src/content/index.ts`. Pure bridge:
-   `window.postMessage` (WPA_ types) ⇄ `chrome.runtime.sendMessage`.
+   `window.postMessage` (WPA_ types) ⇄ `chrome.runtime.sendMessage`. It accepts
+   messages only from the same `window` and origin, and rejects payloads over
+   `PAGE_MESSAGE_LIMITS` (64 KB / 512-char fields).
 
 The page script is registered dynamically at `document_start` via
 `chrome.scripting.registerContentScripts` (MAIN world, all http/https pages) so
@@ -67,13 +72,19 @@ indexes); stored-record `SCHEMA_VERSION` (2) is exported from
 `src/constants/config.ts`.
 
 UI is the **side panel** React app: `src/sidepanel/index.html` → `index.tsx` →
-`App.tsx` (opened by toolbar click via `sidePanel.setPanelBehavior`).
+`App.tsx` (opened by toolbar click via `sidePanel.setPanelBehavior`). All
+side-panel `chrome.*` calls go through `src/sidepanel/api.ts`; components and
+hooks must not call `chrome.*` directly.
 
 Message and domain types are centralized in `src/types/` (`messages.ts`,
 `session.ts`, `metrics.ts`, `report.ts`). Extend types there, not ad hoc.
 
 ## Gotchas
 
+- Storage is bounded: `maxSessions` (50), `maxEventsPerSession` (500),
+  `maxMetricsPerSession` (1000). Exports consolidate repeated callbacks for the
+  same `metricId` + navigation into the worst/latest record; the live session
+  keeps every update for the chart.
 - `manifest.json` sits at the repo root and is **imported by `vite.config.ts`**
   and passed to the CRXJS plugin. Edit it there; do not create a second manifest.
 - Icons live in `public/icons/` and are referenced in the manifest as

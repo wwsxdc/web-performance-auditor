@@ -22,6 +22,31 @@ import {
 import { METRIC_THRESHOLDS } from '../constants/thresholds';
 import * as storage from './storage';
 
+export const RESTORE_NAVIGATION_GRACE_MS = 2000;
+
+function consolidateMetricUpdates(metrics: MetricRecord[]): MetricRecord[] {
+  const byMetric = new Map<string, MetricRecord>();
+
+  for (const metric of metrics) {
+    const key = `${metric.navigationId}:${metric.name}:${metric.metricId ?? metric.id}`;
+    const current = byMetric.get(key);
+    if (!current) {
+      byMetric.set(key, metric);
+      continue;
+    }
+
+    const currentValue = current.value ?? Number.NEGATIVE_INFINITY;
+    const nextValue = metric.value ?? Number.NEGATIVE_INFINITY;
+    const useLatest =
+      metric.name === 'FCP' || metric.name === 'TTFB'
+        ? metric.observedAt >= current.observedAt
+        : nextValue >= currentValue;
+    if (useLatest) byMetric.set(key, metric);
+  }
+
+  return [...byMetric.values()].sort((left, right) => left.observedAt - right.observedAt);
+}
+
 function sanitizeMetricForReport(metric: MetricRecord): MetricRecord {
   const resourceUrl = metric.attribution?.lcp?.resourceUrl;
   if (!metric.attribution || !metric.attribution.lcp || !resourceUrl) return metric;
@@ -41,6 +66,8 @@ interface ActiveSessionPointer {
   navigationId?: string;
   documentToken?: string;
   awaitingDocumentCommit?: boolean;
+  pendingNavigationUrl?: string;
+  pendingNavigationSince?: number;
 }
 
 export class SessionManager {
@@ -52,6 +79,9 @@ export class SessionManager {
   private retiredDocumentTokens = new Set<string>();
   private allowDocumentTokenRotation = false;
   private awaitingDocumentCommit = false;
+  private pendingNavigationUrl: string | null = null;
+  private pendingNavigationSince: number | null = null;
+  private pendingNavigationTimer: ReturnType<typeof setTimeout> | null = null;
   private collectorStatus: CollectorStatus = 'idle';
   private activeTabId: number | null = null;
   private activeTabUrl: string | null = null;
@@ -123,6 +153,7 @@ export class SessionManager {
     this.activeDocumentToken = null;
     this.retiredDocumentTokens.clear();
     this.allowDocumentTokenRotation = false;
+    this.clearPendingNavigation();
     // Experiments start a session immediately before reloading the tab. Until
     // the new document commits, reject metrics from the old document.
     this.awaitingDocumentCommit = options?.awaitDocumentCommit ?? false;
@@ -161,7 +192,7 @@ export class SessionManager {
     const sessionId = this.currentSessionId;
     if (!sessionId) return;
     if (tabId !== undefined && tabId !== this.activeTabId) return;
-    if (this.awaitingDocumentCommit) return;
+    if (this.awaitingDocumentCommit || this.pendingNavigationUrl) return;
     if (!(await this.acceptDocumentToken(documentToken))) return;
 
     const name = rawMetric.name;
@@ -169,6 +200,10 @@ export class SessionManager {
 
     const activeNavigationId = this.activeNavigationId;
     const documentNavigationId = this.documentNavigationId;
+
+    if ((await storage.countMetrics(sessionId)) >= STORAGE_LIMITS.maxMetricsPerSession) {
+      return;
+    }
 
     const session = await storage.getSession(sessionId);
     if (!session) return;
@@ -239,12 +274,19 @@ export class SessionManager {
     const sessionId = this.currentSessionId;
     if (!sessionId) return;
     if (tabId !== undefined && tabId !== this.activeTabId) return;
-    if (this.awaitingDocumentCommit) return;
+    if (this.awaitingDocumentCommit || this.pendingNavigationUrl) return;
     if (!(await this.acceptDocumentToken(documentToken))) return;
     if (!isEventType(rawEvent.type)) return;
     if (typeof rawEvent.timestamp !== 'number') return;
 
-    const navigationId = this.activeNavigationId ?? this.documentNavigationId ?? '';
+    const metricName = rawEvent.details?.metric;
+    const isLoadMetricUpdate =
+      rawEvent.type === 'metric-update' &&
+      isMetricName(metricName) &&
+      (metricName === 'LCP' || metricName === 'FCP' || metricName === 'TTFB');
+    const navigationId = isLoadMetricUpdate
+      ? this.documentNavigationId ?? this.activeNavigationId ?? ''
+      : this.activeNavigationId ?? this.documentNavigationId ?? '';
     if (!navigationId) return;
 
     if ((await storage.countEvents(sessionId)) >= STORAGE_LIMITS.maxEventsPerSession) {
@@ -284,6 +326,7 @@ export class SessionManager {
     errorMsg?: string,
     documentToken?: string,
   ): Promise<void> {
+    if (this.pendingNavigationUrl) return;
     if (documentToken && !(await this.acceptDocumentToken(documentToken))) return;
     this.collectorStatus = status;
     this.error = errorMsg;
@@ -327,7 +370,33 @@ export class SessionManager {
       navigationId: this.activeNavigationId ?? undefined,
       documentToken: this.activeDocumentToken ?? undefined,
       awaitingDocumentCommit: this.awaitingDocumentCommit,
+      pendingNavigationUrl: this.pendingNavigationUrl ?? undefined,
+      pendingNavigationSince: this.pendingNavigationSince ?? undefined,
     });
+  }
+
+  private clearPendingNavigation(): void {
+    this.pendingNavigationUrl = null;
+    this.pendingNavigationSince = null;
+    this.clearPendingNavigationTimer();
+  }
+
+  private clearPendingNavigationTimer(): void {
+    if (!this.pendingNavigationTimer) return;
+    clearTimeout(this.pendingNavigationTimer);
+    this.pendingNavigationTimer = null;
+  }
+
+  private schedulePendingNavigationTimeout(sessionId: string, deadline: number): void {
+    this.clearPendingNavigationTimer();
+    const delay = Math.max(500, deadline - Date.now());
+    this.pendingNavigationTimer = setTimeout(() => {
+      this.pendingNavigationTimer = null;
+      void this.enqueue(async () => {
+        if (this.currentSessionId !== sessionId || !this.pendingNavigationUrl) return;
+        await this.endSessionInternal(sessionId, 'interrupted');
+      }).catch(console.error);
+    }, delay);
   }
 
   private scheduleBroadcast(): void {
@@ -433,6 +502,7 @@ export class SessionManager {
       this.retiredDocumentTokens.clear();
       this.allowDocumentTokenRotation = false;
       this.awaitingDocumentCommit = false;
+      this.clearPendingNavigation();
       this.collectorStatus = 'idle';
       this.activeTabId = null;
       this.activeTabUrl = null;
@@ -464,6 +534,7 @@ export class SessionManager {
     this.retiredDocumentTokens.clear();
     this.allowDocumentTokenRotation = false;
     this.awaitingDocumentCommit = false;
+    this.clearPendingNavigation();
     this.collectorStatus = 'idle';
     this.activeTabId = null;
     this.activeTabUrl = null;
@@ -477,32 +548,37 @@ export class SessionManager {
     tabId: number,
     url: string,
     kind: 'document' | 'spa',
+    transitionType?: string,
   ): Promise<boolean> {
-    return this.enqueue(() => this.handleNavigationInternal(tabId, url, kind));
+    return this.enqueue(() => this.handleNavigationInternal(tabId, url, kind, transitionType));
   }
 
   private async handleNavigationInternal(
     tabId: number,
     url: string,
     kind: 'document' | 'spa',
+    transitionType?: string,
   ): Promise<boolean> {
     if (this.activeTabId !== tabId || !this.currentSessionId) return false;
+
+    // A restored session can wake up on a newer URL. The queued navigation
+    // event owns the segment; do not discard the session or the navigation.
+    this.clearPendingNavigation();
 
     const session = await storage.getSession(this.currentSessionId);
     if (!session) return false;
 
     const last = session.navigations[session.navigations.length - 1];
     const now = Date.now();
-    // webNavigation can emit several events for one transition. Do not create
-    // duplicate segments for the same SPA URL or for the initial document.
-    // A requested reload (awaitingDocumentCommit) must always create a new
-    // document segment, even when the URL is unchanged.
+    // webNavigation can emit the initial document commit more than once. SPA
+    // transitions are real user actions even when they repeat the same URL.
     if (
+      kind === 'document' &&
+      transitionType !== 'reload' &&
       last &&
       last.url === url &&
-      now - last.startedAt < 500 &&
-      (kind === 'spa' ||
-        (session.navigations.length === 1 && !this.awaitingDocumentCommit))
+      session.navigations.length === 1 &&
+      !this.awaitingDocumentCommit
     ) {
       return false;
     }
@@ -552,6 +628,24 @@ export class SessionManager {
     }
 
     await storage.saveSession(session);
+
+    if (kind === 'spa') {
+      const event: DiagnosticEvent = {
+        id: `${session.id}:${generateId()}`,
+        sessionId: session.id,
+        navigationId,
+        type: 'spa-navigation',
+        timestamp: now,
+        details: { url: sanitizeUrl(url) },
+      };
+      if (
+        (await storage.countEvents(session.id)) <
+        STORAGE_LIMITS.maxEventsPerSession
+      ) {
+        await storage.saveEvent(event);
+      }
+    }
+
     await this.saveActivePointer({
       id: session.id,
       tabId,
@@ -572,7 +666,7 @@ export class SessionManager {
     );
 
     // URLs are exported without query/hash so tokens and PII cannot leak.
-    const metrics = session.metrics.map(sanitizeMetricForReport);
+    const metrics = consolidateMetricUpdates(session.metrics).map(sanitizeMetricForReport);
     const navigations = session.navigations.map((navigation) => ({
       ...navigation,
       url: sanitizeUrl(navigation.url),
@@ -664,6 +758,14 @@ export class SessionManager {
       const lastDocumentNavigation = [...session.navigations]
         .reverse()
         .find((navigation) => navigation.kind === 'document');
+      const pendingNavigationUrl =
+        tab.url && tab.url !== pointer.url ? tab.url : null;
+      const pendingNavigationSince = pendingNavigationUrl
+        ? pointer.pendingNavigationUrl === pendingNavigationUrl &&
+          typeof pointer.pendingNavigationSince === 'number'
+          ? pointer.pendingNavigationSince
+          : Date.now()
+        : null;
 
       this.currentSessionId = session.id;
       this.lastSessionId = session.id;
@@ -674,11 +776,31 @@ export class SessionManager {
       // The switch may happen between startSession(awaitDocumentCommit) and
       // the reload commit, so the gate must survive an MV3 worker restart.
       this.awaitingDocumentCommit = pointer.awaitingDocumentCommit ?? false;
+      // A URL change is applied by the navigation event that woke the worker.
+      // Until then, reject metrics so they cannot land in the old segment.
+      this.pendingNavigationUrl = pendingNavigationUrl;
+      this.pendingNavigationSince = pendingNavigationSince;
       // The document may have been reloaded while the worker was asleep.
-      this.allowDocumentTokenRotation = !this.awaitingDocumentCommit;
+      this.allowDocumentTokenRotation = !this.awaitingDocumentCommit && !pendingNavigationUrl;
       this.activeTabId = pointer.tabId;
       this.activeTabUrl = tab.url ?? pointer.url;
-      this.collectorStatus = 'collecting';
+      this.collectorStatus = pendingNavigationUrl ? 'initializing' : 'collecting';
+      if (pendingNavigationUrl && pendingNavigationSince !== null) {
+        await this.saveActivePointer({
+          id: session.id,
+          tabId: pointer.tabId,
+          url: pointer.url,
+          navigationId: this.activeNavigationId ?? undefined,
+          documentToken: this.activeDocumentToken ?? undefined,
+          awaitingDocumentCommit: this.awaitingDocumentCommit,
+          pendingNavigationUrl,
+          pendingNavigationSince,
+        });
+        this.schedulePendingNavigationTimeout(
+          session.id,
+          pendingNavigationSince + RESTORE_NAVIGATION_GRACE_MS,
+        );
+      }
       await this.broadcastState();
     } catch (err) {
       console.warn('[WPA] Failed to restore session:', err);
@@ -702,7 +824,12 @@ export class SessionManager {
       typeof pointer.tabId !== 'number' ||
       typeof pointer.url !== 'string' ||
       (pointer.navigationId !== undefined && typeof pointer.navigationId !== 'string') ||
-      (pointer.documentToken !== undefined && typeof pointer.documentToken !== 'string')
+      (pointer.documentToken !== undefined && typeof pointer.documentToken !== 'string') ||
+      (pointer.pendingNavigationUrl !== undefined &&
+        typeof pointer.pendingNavigationUrl !== 'string') ||
+      (pointer.pendingNavigationSince !== undefined &&
+        (typeof pointer.pendingNavigationSince !== 'number' ||
+          !Number.isFinite(pointer.pendingNavigationSince)))
     ) {
       return undefined;
     }

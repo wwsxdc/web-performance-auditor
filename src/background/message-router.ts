@@ -194,6 +194,13 @@ export function handleMessage(
         }
 
         case 'EXPERIMENT_START': {
+          if (
+            message.tabId !== sessionManager.getActiveTabId() ||
+            message.baselineSessionId !== sessionManager.getActiveSessionId()
+          ) {
+            sendResponse({ error: 'Эксперимент должен относиться к активной сессии' });
+            break;
+          }
           const result = await experimentManager.start({
             baselineSessionId: message.baselineSessionId,
             tabId: message.tabId,

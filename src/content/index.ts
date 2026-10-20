@@ -3,7 +3,7 @@
  * Bridges messages between page script (MAIN) and background service worker.
  */
 
-import { isPageToContentMessage } from '../utils/validation';
+import { isPageMessageWithinSize, isPageToContentMessage } from '../utils/validation';
 import { generateId } from '../utils/id';
 
 const WPA_PREFIX = 'WPA_';
@@ -35,7 +35,6 @@ interface OverlayRuntime {
   raf: number;
   unavailableReported: boolean;
   resizeObserver: ResizeObserver | null;
-  mutationObserver: MutationObserver | null;
   onScroll: () => void;
   onResize: () => void;
 }
@@ -43,6 +42,7 @@ interface OverlayRuntime {
 // One overlay per diagnostic category (LCP/CLS/INP) so the three highlight
 // types can be shown together and toggled independently (FR-12).
 const overlays = new Map<string, OverlayRuntime>();
+let overlayMutationObserver: MutationObserver | null = null;
 
 function overlayKey(target: HighlightTarget): string {
   return target.metricName ?? target.targetId ?? 'default';
@@ -130,7 +130,6 @@ function ensureOverlay(key: string): OverlayRuntime {
     raf: 0,
     unavailableReported: false,
     resizeObserver: null,
-    mutationObserver: null,
     onScroll: () => scheduleOverlayPosition(runtime),
     onResize: () => scheduleOverlayPosition(runtime),
   };
@@ -178,6 +177,30 @@ function scheduleOverlayPosition(runtime: OverlayRuntime): void {
   runtime.raf = requestAnimationFrame(() => positionOverlay(runtime));
 }
 
+function rebuildOverlayMutationObserver(): void {
+  if (overlays.size === 0) {
+    overlayMutationObserver?.disconnect();
+    overlayMutationObserver = null;
+    return;
+  }
+
+  if (!overlayMutationObserver) {
+    overlayMutationObserver = new MutationObserver(() => {
+      for (const runtime of overlays.values()) scheduleOverlayPosition(runtime);
+    });
+  } else {
+    overlayMutationObserver.disconnect();
+  }
+
+  for (const runtime of overlays.values()) {
+    let node: Node | null = runtime.target.parentNode;
+    while (node) {
+      overlayMutationObserver.observe(node, { childList: true });
+      node = node.parentNode ?? (node instanceof ShadowRoot ? node.host : null);
+    }
+  }
+}
+
 function attachOverlayObservers(runtime: OverlayRuntime): void {
   detachOverlayObservers(runtime);
   window.addEventListener('scroll', runtime.onScroll, true);
@@ -186,11 +209,7 @@ function attachOverlayObservers(runtime: OverlayRuntime): void {
     runtime.resizeObserver = new ResizeObserver(() => scheduleOverlayPosition(runtime));
     runtime.resizeObserver.observe(runtime.target);
   }
-  runtime.mutationObserver = new MutationObserver(() => scheduleOverlayPosition(runtime));
-  runtime.mutationObserver.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+  rebuildOverlayMutationObserver();
 }
 
 function detachOverlayObservers(runtime: OverlayRuntime): void {
@@ -198,8 +217,6 @@ function detachOverlayObservers(runtime: OverlayRuntime): void {
   window.removeEventListener('resize', runtime.onResize);
   runtime.resizeObserver?.disconnect();
   runtime.resizeObserver = null;
-  runtime.mutationObserver?.disconnect();
-  runtime.mutationObserver = null;
   if (runtime.raf) {
     cancelAnimationFrame(runtime.raf);
     runtime.raf = 0;
@@ -212,6 +229,7 @@ function clearOverlay(key: string): void {
   detachOverlayObservers(runtime);
   runtime.host.remove();
   overlays.delete(key);
+  rebuildOverlayMutationObserver();
 }
 
 function clearHighlight(metricName?: string): void {
@@ -270,8 +288,8 @@ function isAlreadyActive(): boolean {
 
 if (!isAlreadyActive()) {
   window.addEventListener('message', (event: MessageEvent) => {
-    // Only accept messages from the same window (FR-01, 4.3)
     if (event.source !== window) return;
+    if (event.origin !== window.location.origin) return;
 
     const data: unknown = event.data;
     if (
@@ -283,6 +301,7 @@ if (!isAlreadyActive()) {
       return;
     }
 
+    if (!isPageMessageWithinSize(data)) return;
     if (!isPageToContentMessage(data)) return;
 
     switch (data.type) {
@@ -337,7 +356,10 @@ if (!isAlreadyActive()) {
           .sendMessage({
             type: 'COLLECTOR_STATUS',
             requestId: generateId(),
-            status: 'ready',
+            status:
+              data.payload?.capabilities?.length === 0
+                ? 'unsupported'
+                : 'ready',
             documentToken: data.payload?.documentToken,
           })
           .catch((err: Error) => {

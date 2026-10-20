@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Experiment, ExperimentInput } from '../../types/experiment';
 import { generateId } from '../../utils/id';
+import { sendRuntimeMessage } from '../api';
 
 interface StartResponse {
   experiment?: Experiment;
@@ -14,10 +15,10 @@ export function useExperiments(sessionId: string | undefined) {
 
   const refresh = useCallback(async () => {
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<{ experiments?: Experiment[] }>({
         type: 'EXPERIMENT_LIST',
         requestId: generateId(),
-      })) as { experiments?: Experiment[] } | undefined;
+      });
       setExperiments(response?.experiments ?? []);
     } catch (err) {
       console.error('[WPA UI] Failed to load experiments:', err);
@@ -32,11 +33,11 @@ export function useExperiments(sessionId: string | undefined) {
 
   const start = useCallback(async (input: ExperimentInput) => {
     setError(undefined);
-    const response = (await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessage<StartResponse>({
       type: 'EXPERIMENT_START',
       requestId: generateId(),
       ...input,
-    })) as StartResponse | undefined;
+    });
 
     if (response?.error) {
       setError(response.error);
@@ -48,11 +49,14 @@ export function useExperiments(sessionId: string | undefined) {
 
   const finish = useCallback(async (experimentId: string) => {
     setError(undefined);
-    const response = (await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessage<{
+      experiment?: Experiment;
+      error?: string;
+    }>({
       type: 'EXPERIMENT_FINISH',
       requestId: generateId(),
       experimentId,
-    })) as { experiment?: Experiment; error?: string } | undefined;
+    });
     if (response?.error) setError(response.error);
     await refresh();
     return response?.experiment;
@@ -60,11 +64,14 @@ export function useExperiments(sessionId: string | undefined) {
 
   const cancel = useCallback(async (experimentId: string) => {
     setError(undefined);
-    const response = (await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessage<{
+      experiment?: Experiment;
+      error?: string;
+    }>({
       type: 'EXPERIMENT_CANCEL',
       requestId: generateId(),
       experimentId,
-    })) as { experiment?: Experiment; error?: string } | undefined;
+    });
     if (response?.error) setError(response.error);
     await refresh();
     return response?.experiment;

@@ -5,8 +5,10 @@ import {
   isExtensionMessage,
   isMetricName,
   isMetricStatus,
+  isPageMessageWithinSize,
   isPageToContentMessage,
 } from './validation';
+import { PAGE_MESSAGE_LIMITS } from '../constants/config';
 
 describe('metric guards', () => {
   it('recognizes supported metric names and statuses', () => {
@@ -61,6 +63,12 @@ describe('isPageToContentMessage', () => {
     expect(
       isPageToContentMessage({
         ...event,
+        payload: { ...event.payload, eventType: 'metric-update', details: { metric: 'LCP' } },
+      }),
+    ).toBe(true);
+    expect(
+      isPageToContentMessage({
+        ...event,
         payload: { ...event.payload, eventType: 'mystery' },
       }),
     ).toBe(false);
@@ -100,6 +108,47 @@ describe('isPageToContentMessage', () => {
         type: 'WPA_METRIC',
         payload: { ...basePayload, documentToken: 42 },
       }),
+    ).toBe(false);
+    expect(
+      isPageToContentMessage({
+        type: 'WPA_METRIC',
+        payload: { ...basePayload, rating: 'excellent' },
+      }),
+    ).toBe(false);
+    expect(
+      isPageToContentMessage({
+        type: 'WPA_METRIC',
+        payload: {
+          ...basePayload,
+          documentToken: 'x'.repeat(PAGE_MESSAGE_LIMITS.maxStringLength + 1),
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects oversized page messages', () => {
+    const payload = {
+      type: 'WPA_EVENT',
+      payload: {
+        eventId: 'event-1',
+        eventType: 'long-task',
+        timestamp: 1200,
+        details: { value: 'x'.repeat(PAGE_MESSAGE_LIMITS.maxStringLength + 1) },
+      },
+    };
+
+    expect(isPageMessageWithinSize(payload)).toBe(true);
+    expect(
+      isPageMessageWithinSize({
+        ...payload,
+        payload: {
+          ...payload.payload,
+          details: { value: 'x'.repeat(PAGE_MESSAGE_LIMITS.maxBytes) },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPageMessageWithinSize('Ж'.repeat(PAGE_MESSAGE_LIMITS.maxBytes / 2)),
     ).toBe(false);
   });
 });

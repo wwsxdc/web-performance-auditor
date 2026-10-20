@@ -43,7 +43,7 @@ export type PageToContentMessage =
       type: 'WPA_EVENT';
       payload: {
         eventId: string;
-        eventType: 'long-task' | 'interaction' | 'layout-shift';
+        eventType: 'long-task' | 'interaction' | 'layout-shift' | 'metric-update';
         timestamp: number;
         duration?: number;
         details?: Record<string, string | number | boolean | null>;

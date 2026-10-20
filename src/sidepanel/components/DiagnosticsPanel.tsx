@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { DiagnosticLogEntry } from '../../background/diagnostics';
 import { generateId } from '../../utils/id';
 import { formatTimestamp } from '../../utils/time';
+import { sendRuntimeMessage } from '../api';
 
 interface DiagnosticsResponse {
   entries?: DiagnosticLogEntry[];
@@ -15,10 +16,10 @@ export function DiagnosticsPanel() {
 
   const refresh = useCallback(async () => {
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<DiagnosticsResponse>({
         type: 'GET_DIAGNOSTICS',
         requestId: generateId(),
-      })) as DiagnosticsResponse | undefined;
+      });
       setEntries(response?.entries ?? []);
       setStatus(response?.error ?? '');
       setStatusError(Boolean(response?.error));
@@ -34,7 +35,7 @@ export function DiagnosticsPanel() {
 
   const clear = async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await sendRuntimeMessage({
         type: 'CLEAR_DIAGNOSTICS',
         requestId: generateId(),
       });

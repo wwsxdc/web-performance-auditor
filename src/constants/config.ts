@@ -6,7 +6,13 @@ export const EXTENSION_VERSION = '0.1.0';
 export const STORAGE_LIMITS = {
   maxSessions: 50,
   maxEventsPerSession: 500,
+  maxMetricsPerSession: 1000,
   sessionRetentionDays: 30,
+};
+
+export const PAGE_MESSAGE_LIMITS = {
+  maxBytes: 64 * 1024,
+  maxStringLength: 512,
 };
 
 export const WPA_MESSAGE_PREFIX = 'WPA_';

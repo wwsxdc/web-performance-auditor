@@ -2,6 +2,7 @@ import type { CollectorStatus, ExtensionMessage, PageToContentMessage } from '..
 import type { MetricName, MetricSource, MetricStatus } from '../types/metrics';
 import type { DiagnosticEventType } from '../types/events';
 import type { ExperimentPreset } from '../types/experiment';
+import { PAGE_MESSAGE_LIMITS } from '../constants/config';
 
 const METRIC_NAMES: readonly MetricName[] = ['LCP', 'CLS', 'INP', 'FCP', 'TTFB'];
 const METRIC_SOURCES: readonly MetricSource[] = [
@@ -24,6 +25,12 @@ const COLLECTOR_STATUSES: readonly CollectorStatus[] = [
   'permission-denied',
   'error',
 ];
+const METRIC_RATINGS: readonly string[] = [
+  'good',
+  'needs-improvement',
+  'poor',
+  'unrated',
+];
 const EVENT_TYPES: readonly DiagnosticEventType[] = [
   'metric-update',
   'layout-shift',
@@ -43,6 +50,31 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isBoundedString(value: unknown): value is string {
+  return isString(value) && value.length <= PAGE_MESSAGE_LIMITS.maxStringLength;
+}
+
+function isBoundedDetails(value: unknown): value is Record<string, string | number | boolean | null> {
+  if (!isObject(value)) return false;
+  const entries = Object.entries(value);
+  if (entries.length > 32) return false;
+  return entries.every(([key, entry]) => {
+    if (key.length > 64) return false;
+    if (entry === null || typeof entry === 'boolean') return true;
+    if (typeof entry === 'number') return Number.isFinite(entry);
+    return isBoundedString(entry);
+  });
+}
+
+export function isPageMessageWithinSize(value: unknown): boolean {
+  try {
+    const encoded = new TextEncoder().encode(JSON.stringify(value));
+    return encoded.byteLength <= PAGE_MESSAGE_LIMITS.maxBytes;
+  } catch {
+    return false;
+  }
 }
 
 export function isMetricName(value: unknown): value is MetricName {
@@ -77,15 +109,20 @@ export function isPageToContentMessage(value: unknown): value is PageToContentMe
       return (
         value.payload === undefined ||
         (isObject(value.payload) &&
-          (value.payload.capabilities === undefined || Array.isArray(value.payload.capabilities)) &&
-          (value.payload.documentToken === undefined || isString(value.payload.documentToken)))
+          (value.payload.capabilities === undefined ||
+            (Array.isArray(value.payload.capabilities) &&
+              value.payload.capabilities.length <= 16 &&
+              value.payload.capabilities.every(isBoundedString))) &&
+          (value.payload.documentToken === undefined ||
+            isBoundedString(value.payload.documentToken)))
       );
 
     case 'WPA_COLLECTOR_ERROR':
       return (
         isObject(value.payload) &&
-        isString(value.payload.message) &&
-        (value.payload.documentToken === undefined || isString(value.payload.documentToken))
+        isBoundedString(value.payload.message) &&
+        (value.payload.documentToken === undefined ||
+          isBoundedString(value.payload.documentToken))
       );
 
     case 'WPA_EVENT': {
@@ -93,14 +130,15 @@ export function isPageToContentMessage(value: unknown): value is PageToContentMe
       const payload = value.payload;
 
       return (
-        isString(payload.eventId) &&
+        isBoundedString(payload.eventId) &&
         (payload.eventType === 'long-task' ||
           payload.eventType === 'interaction' ||
-          payload.eventType === 'layout-shift') &&
+          payload.eventType === 'layout-shift' ||
+          payload.eventType === 'metric-update') &&
         isNumber(payload.timestamp) &&
         (payload.duration === undefined || isNumber(payload.duration)) &&
-        (payload.details === undefined || isObject(payload.details)) &&
-        (payload.documentToken === undefined || isString(payload.documentToken))
+        (payload.details === undefined || isBoundedDetails(payload.details)) &&
+        (payload.documentToken === undefined || isBoundedString(payload.documentToken))
       );
     }
 
@@ -109,17 +147,19 @@ export function isPageToContentMessage(value: unknown): value is PageToContentMe
       const payload = value.payload;
 
       return (
-        isString(payload.updateId) &&
-        isString(payload.metricId) &&
+        isBoundedString(payload.updateId) &&
+        isBoundedString(payload.metricId) &&
         isMetricName(payload.name) &&
         (payload.value === null || isNumber(payload.value)) &&
         isNumber(payload.delta) &&
-        isString(payload.rating) &&
+        isBoundedString(payload.rating) &&
+        METRIC_RATINGS.includes(payload.rating) &&
         isNumber(payload.observedAt) &&
-        (payload.navigationType === undefined || isString(payload.navigationType)) &&
+        (payload.navigationType === undefined || isBoundedString(payload.navigationType)) &&
         (payload.status === undefined || isMetricStatus(payload.status)) &&
         (payload.source === undefined || isMetricSource(payload.source)) &&
-        (payload.documentToken === undefined || isString(payload.documentToken)) &&
+        (payload.documentToken === undefined ||
+          isBoundedString(payload.documentToken)) &&
         (payload.attribution === undefined || isObject(payload.attribution))
       );
     }

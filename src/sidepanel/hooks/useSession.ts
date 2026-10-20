@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { AppState, ExtensionMessage } from '../../types/messages';
+import type { AppState } from '../../types/messages';
 import type { MetricName } from '../../types/metrics';
 import { generateId } from '../../utils/id';
+import {
+  getActiveTab,
+  onRuntimeMessage,
+  onTabActivated,
+  onTabUpdated,
+  sendRuntimeMessage,
+} from '../api';
 
 interface HighlightRequest {
   targetId?: string;
@@ -31,7 +38,7 @@ export function useSession() {
 
   const refreshActiveTab = useCallback(async () => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const tab = await getActiveTab();
       setState((prev) => {
         if (!prev) return prev;
         return {
@@ -46,12 +53,11 @@ export function useSession() {
   }, []);
 
   useEffect(() => {
-    chrome.runtime
-      .sendMessage({
-        type: 'GET_STATE',
-        requestId: generateId(),
-      })
-      .then((response: { state?: AppState }) => {
+    sendRuntimeMessage<{ state?: AppState }>({
+      type: 'GET_STATE',
+      requestId: generateId(),
+    })
+      .then((response) => {
         setState(response?.state ?? EMPTY_STATE);
         setIsLoading(false);
       })
@@ -72,46 +78,56 @@ export function useSession() {
       void refreshActiveTab();
     };
     const onUpdated = (
-      _tabId: number,
+      tabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
     ) => {
-      if (changeInfo.url) {
-        setState((prev) => (prev ? { ...prev, activeTabUrl: changeInfo.url ?? prev.activeTabUrl } : prev));
-      }
+      if (!changeInfo.url) return;
+      setState((prev) => {
+        if (!prev) return prev;
+        const activeTabId = prev.session?.tabId ?? prev.activeTabId;
+        if (
+          activeTabId !== undefined &&
+          activeTabId !== null &&
+          tabId !== activeTabId
+        ) {
+          return prev;
+        }
+        return { ...prev, activeTabUrl: changeInfo.url ?? prev.activeTabUrl };
+      });
     };
 
-    chrome.tabs.onActivated.addListener(onActivated);
-    chrome.tabs.onUpdated.addListener(onUpdated);
+    const removeActivated = onTabActivated(onActivated);
+    const removeUpdated = onTabUpdated(onUpdated);
 
     return () => {
-      chrome.tabs.onActivated.removeListener(onActivated);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
+      removeActivated();
+      removeUpdated();
     };
   }, [refreshActiveTab]);
 
-  useEffect(() => {
-    const listener = (message: ExtensionMessage) => {
-      if (message.type === 'STATE_UPDATE') {
-        setState(message.state);
-      }
-    };
-    chrome.runtime.onMessage.addListener(listener);
-    return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  useEffect(
+    () =>
+      onRuntimeMessage((message) => {
+        if (message.type === 'STATE_UPDATE') {
+          setState(message.state);
+        }
+      }),
+    [],
+  );
 
   const startSession = useCallback(async () => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await getActiveTab(true);
       if (!tab?.id) {
         setState((prev) => (prev ? { ...prev, collectorStatus: 'error', error: 'Активная вкладка не найдена' } : prev));
         return;
       }
 
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<StartSessionResponse>({
         type: 'SESSION_START',
         requestId: generateId(),
         tabId: tab.id,
-      })) as StartSessionResponse | undefined;
+      });
 
       if (response?.error) {
         setState((prev) =>
@@ -144,15 +160,17 @@ export function useSession() {
   const highlightTarget = useCallback(
     async (target: HighlightRequest) => {
       const tabId = state?.session?.tabId ?? state?.activeTabId;
-      if (tabId === undefined) return { available: false, reason: 'Вкладка не определена' };
+      if (tabId === undefined || tabId === null) {
+        return { available: false, reason: 'Вкладка не определена' };
+      }
 
       try {
-        return (await chrome.runtime.sendMessage({
+        return await sendRuntimeMessage<{ available?: boolean; reason?: string }>({
           type: 'HIGHLIGHT_TARGET',
           requestId: generateId(),
           tabId,
           target,
-        })) as { available?: boolean; reason?: string } | undefined;
+        });
       } catch (err) {
         console.error('[WPA UI] Failed to highlight target:', err);
         return { available: false, reason: String(err) };
@@ -163,9 +181,9 @@ export function useSession() {
 
   const clearHighlight = useCallback(async (metricName?: MetricName) => {
     const tabId = state?.session?.tabId ?? state?.activeTabId;
-    if (tabId === undefined) return;
+    if (tabId === undefined || tabId === null) return;
     try {
-      await chrome.runtime.sendMessage({
+      await sendRuntimeMessage({
         type: 'CLEAR_HIGHLIGHT',
         requestId: generateId(),
         tabId,
@@ -180,7 +198,7 @@ export function useSession() {
     if (!state?.session?.id) return;
     await clearHighlight();
     try {
-      await chrome.runtime.sendMessage({
+      await sendRuntimeMessage({
         type: 'SESSION_STOP',
         requestId: generateId(),
         sessionId: state.session.id,

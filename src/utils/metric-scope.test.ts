@@ -66,6 +66,40 @@ describe('metricsForActiveSegment', () => {
     ]);
   });
 
+  it('does not inherit CLS/INP from a previous document', () => {
+    const current = session();
+    current.navigations.push(
+      { id: 'doc-3', sessionId: 'session-1', url: 'https://example.com/f', kind: 'document', startedAt: 5, source: 'web-navigation' },
+      { id: 'spa-4', sessionId: 'session-1', url: 'https://example.com/g', kind: 'spa', startedAt: 6, source: 'web-navigation' },
+    );
+    current.metrics.push(metric('lcp-doc-3', 'LCP', 'doc-3'));
+
+    expect(metricsForActiveSegment(current, 'doc-3').map((item) => item.id)).toEqual([
+      'lcp-doc-3',
+    ]);
+    expect(metricsForActiveSegment(current, 'spa-4').map((item) => item.id)).toEqual([
+      'lcp-doc-3',
+    ]);
+  });
+
+  it('does not add a fallback value when the active SPA segment has its own value', () => {
+    const current = session();
+    current.navigations.push({
+      id: 'spa-3',
+      sessionId: 'session-1',
+      url: 'https://example.com/e',
+      kind: 'spa',
+      startedAt: 5,
+      source: 'web-navigation',
+    });
+    current.metrics.push(metric('cls-spa-3', 'CLS', 'spa-3'));
+
+    expect(metricsForActiveSegment(current, 'spa-3').map((item) => item.id)).toEqual([
+      'lcp-new',
+      'cls-spa-3',
+    ]);
+  });
+
   it('finds the latest document segment', () => {
     expect(latestDocumentNavigationId(session())).toBe('doc-2');
   });

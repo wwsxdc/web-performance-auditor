@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { generateId } from '../../utils/id';
+import { sendRuntimeMessage } from '../api';
 
 interface SettingsResponse {
   settings?: { retentionDays: number };
@@ -16,9 +17,11 @@ export function SettingsPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    void chrome.runtime
-      .sendMessage({ type: 'GET_SETTINGS', requestId: generateId() })
-      .then((response: SettingsResponse | undefined) => {
+    void sendRuntimeMessage<SettingsResponse>({
+      type: 'GET_SETTINGS',
+      requestId: generateId(),
+    })
+      .then((response) => {
         if (cancelled) return;
         if (response?.error) {
           setStatus(response.error);
@@ -50,11 +53,11 @@ export function SettingsPanel() {
     setStatus('');
     setStatusError(false);
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage<SettingsResponse>({
         type: 'UPDATE_SETTINGS',
         requestId: generateId(),
         retentionDays: days,
-      })) as SettingsResponse | undefined;
+      });
       if (response?.error) {
         setStatus(response.error);
         setStatusError(true);
