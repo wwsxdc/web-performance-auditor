@@ -5,6 +5,11 @@
 
 import { isPageMessageWithinSize, isPageToContentMessage } from '../utils/validation';
 import { generateId } from '../utils/id';
+import {
+  captureTargetAnchor,
+  isTargetAnchorIntact,
+  type TargetAnchor,
+} from '../utils/target-anchor';
 
 const WPA_PREFIX = 'WPA_';
 const BRIDGE_GLOBAL_KEY = '__WPA_BRIDGE_ACTIVE__';
@@ -29,6 +34,7 @@ interface OverlayRuntime {
   box: HTMLDivElement;
   label: HTMLDivElement;
   target: Element;
+  anchor: TargetAnchor | null;
   targetId?: string;
   metricName?: string;
   color: string;
@@ -124,6 +130,7 @@ function ensureOverlay(key: string): OverlayRuntime {
     box,
     label,
     target: document.documentElement,
+    anchor: null,
     targetId: undefined,
     metricName: key === 'LCP' || key === 'CLS' || key === 'INP' ? key : undefined,
     color: OVERLAY_COLORS.green,
@@ -137,10 +144,19 @@ function ensureOverlay(key: string): OverlayRuntime {
   return runtime;
 }
 
+function isTargetStale(runtime: OverlayRuntime): boolean {
+  if (!runtime.anchor) return !runtime.target.isConnected;
+  return !isTargetAnchorIntact(
+    runtime.target,
+    runtime.anchor,
+    (selector) => document.querySelector(selector),
+  );
+}
+
 function positionOverlay(runtime: OverlayRuntime): void {
   runtime.raf = 0;
 
-  if (!runtime.target.isConnected) {
+  if (isTargetStale(runtime)) {
     runtime.box.style.display = 'none';
     if (!runtime.unavailableReported) {
       runtime.unavailableReported = true;
@@ -265,6 +281,10 @@ function highlightTarget(target: HighlightTarget): boolean {
 
   const runtime = ensureOverlay(key);
   runtime.target = element;
+  // Remember the structural position so a later removal/replacement/move is
+  // reported instead of quietly following a selector that now matches another
+  // node (FR-14).
+  runtime.anchor = captureTargetAnchor(element, target.selector);
   runtime.targetId = target.targetId;
   runtime.metricName = target.metricName;
   runtime.color = OVERLAY_COLORS[target.color];

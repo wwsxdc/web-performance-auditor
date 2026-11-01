@@ -332,6 +332,80 @@ async function main() {
       `available=${staleState.overlayStatus?.available}, display=${staleOverlay}`,
     );
 
+    // FR-14: a node replaced under the same selector must not keep (or inherit)
+    // a highlight; the overlay reports the target as unavailable.
+    const swapHighlight = await send('HIGHLIGHT_TARGET', {
+      tabId,
+      target: {
+        targetId: 'e2e-swap',
+        selector: '#swap-me',
+        color: 'yellow',
+        label: 'CLS · swap',
+        metricName: 'CLS',
+      },
+    });
+    await target.bringToFront();
+    await target.evaluate(() => {
+      const current = document.querySelector('#swap-me');
+      const replacement = current?.cloneNode(true);
+      current?.replaceWith(replacement);
+    });
+    const swappedState = await waitFor(
+      (candidate) =>
+        candidate?.overlayStatus?.targetId === 'e2e-swap' &&
+        candidate.overlayStatus.available === false,
+      'replaced target status',
+    );
+    const swappedOverlay = await target.evaluate(() => {
+      const box = document
+        .getElementById('wpa-diagnostic-overlay-CLS')
+        ?.shadowRoot?.querySelector('.box');
+      return box?.style.display ?? 'missing';
+    });
+    check(
+      'REPLACED_TARGET',
+      swapHighlight?.available === true &&
+        swappedState.overlayStatus?.available === false &&
+        (swappedOverlay === 'none' || swappedOverlay === 'missing'),
+      `available=${swappedState.overlayStatus?.available}, display=${swappedOverlay}`,
+    );
+
+    // FR-14: moving the node inside the DOM also invalidates the highlight.
+    const movedHighlight = await send('HIGHLIGHT_TARGET', {
+      tabId,
+      target: {
+        targetId: 'e2e-move',
+        selector: '#move-me',
+        color: 'yellow',
+        label: 'CLS · move',
+        metricName: 'CLS',
+      },
+    });
+    await target.bringToFront();
+    await target.evaluate(() => {
+      const element = document.getElementById('move-me');
+      if (element) document.body.append(element);
+    });
+    const movedState = await waitFor(
+      (candidate) =>
+        candidate?.overlayStatus?.targetId === 'e2e-move' &&
+        candidate.overlayStatus.available === false,
+      'moved target status',
+    );
+    const movedOverlay = await target.evaluate(() => {
+      const box = document
+        .getElementById('wpa-diagnostic-overlay-CLS')
+        ?.shadowRoot?.querySelector('.box');
+      return box?.style.display ?? 'missing';
+    });
+    check(
+      'MOVED_TARGET',
+      movedHighlight?.available === true &&
+        movedState.overlayStatus?.available === false &&
+        (movedOverlay === 'none' || movedOverlay === 'missing'),
+      `available=${movedState.overlayStatus?.available}, display=${movedOverlay}`,
+    );
+
     await panel.evaluate(() => {
       const button = [...document.querySelectorAll('button')].find(
         (candidate) => candidate.textContent?.includes('Снять все оверлеи'),
