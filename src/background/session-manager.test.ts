@@ -382,6 +382,21 @@ describe('SessionManager', () => {
     expect(restored.isActiveForTab(1)).toBe(true);
   });
 
+  it('clears a pointer to a session that no longer exists', async () => {
+    localStore.set('activeSession', {
+      id: 'deleted-session',
+      tabId: 1,
+      url: 'https://example.com/',
+      navigationId: 'navigation-1',
+    });
+
+    const manager = new SessionManager();
+    await manager.restore();
+
+    expect(localStore.has('activeSession')).toBe(false);
+    expect((await manager.getState()).session).toBeNull();
+  });
+
   it('applies a navigation queued while restore is still pending', async () => {
     const first = new SessionManager();
     const session = await first.startSession(1, 'https://example.com/a');

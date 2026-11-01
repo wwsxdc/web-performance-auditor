@@ -4,6 +4,7 @@ import { MetricsGrid } from './components/MetricsGrid';
 import { ErrorView } from './components/ErrorView';
 import { ExportButton } from './components/ExportButton';
 import { SessionInfo } from './components/SessionInfo';
+import { CompletenessStatus } from './components/CompletenessStatus';
 import { MetricDetails } from './components/MetricDetails';
 import { ExperimentsPanel } from './components/ExperimentsPanel';
 import { MarkdownExportButton } from './components/MarkdownExportButton';
@@ -402,6 +403,12 @@ export default function App() {
             onSelect={handleSelect}
             onQuickHighlight={handleQuickHighlight}
           />
+
+          {session && (
+            <div className="bg-white rounded-lg p-3 shadow-sm mt-3">
+              <CompletenessStatus session={session} compact />
+            </div>
+          )}
 
           {session && (
             <OverlayControls

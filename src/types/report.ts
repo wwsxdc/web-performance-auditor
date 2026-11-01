@@ -3,6 +3,15 @@ import type { DiagnosticEvent } from './events';
 import type { NavigationRecord } from './session';
 import type { Experiment } from './experiment';
 
+export type CompletenessLevel = 'full' | 'partial' | 'limited';
+
+export interface ReportCompleteness {
+  level: CompletenessLevel;
+  reasons: string[];
+  /** Session start, so the reader knows how long the data was observed. */
+  observedSince: number;
+}
+
 export interface ReportAttribution {
   metricId: string;
   metricName: MetricName;
@@ -34,4 +43,5 @@ export interface JsonReport {
   events: DiagnosticEvent[];
   experiments: Experiment[];
   limitations: string[];
+  completeness: ReportCompleteness;
 }

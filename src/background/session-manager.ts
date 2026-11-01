@@ -5,6 +5,7 @@ import type { AppState, CollectorStatus, OverlayStatus } from '../types/messages
 import type { JsonReport, ReportAttribution } from '../types/report';
 import { generateId } from '../utils/id';
 import { calculateRating } from '../utils/rating';
+import { calculateCompleteness } from '../utils/completeness';
 import { isAuditableUrl, sanitizeUrl } from '../utils/url';
 import {
   isEventType,
@@ -849,6 +850,10 @@ export class SessionManager {
       events,
       experiments,
       limitations: this.collectLimitations(session),
+      completeness: {
+        ...calculateCompleteness(session.metrics, session.events),
+        observedSince: session.startedAt,
+      },
     };
   }
 

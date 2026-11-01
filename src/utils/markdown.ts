@@ -2,6 +2,7 @@ import type { JsonReport } from '../types/report';
 import type { Experiment } from '../types/experiment';
 import type { MetricName } from '../types/metrics';
 import { selectMetricForDisplay } from './select-metric';
+import { COMPLETENESS_LABELS } from './completeness';
 import { formatMetricValue, formatTimestamp } from './time';
 
 const METRIC_NAMES: MetricName[] = ['LCP', 'CLS', 'INP', 'FCP', 'TTFB'];
@@ -132,8 +133,23 @@ export function generateMarkdownReport(
     `- Браузер: ${report.session.browser.name}${report.session.browser.version ? ` ${report.session.browser.version}` : ''}`,
     `- Наблюдение: ${started} — ${completed}`,
     `- Статус сессии: ${report.session.status}`,
+    `- Полнота данных: **${COMPLETENESS_LABELS[report.completeness.level]}**`,
     `- Сессия: \`${report.session.id}\``,
     `- Схема: ${report.schemaVersion}, версия отчёта: ${report.reportVersion}`,
+    '',
+    '## Полнота данных',
+    '',
+    `Уровень: **${COMPLETENESS_LABELS[report.completeness.level]}**; наблюдение начато ${formatTimestamp(report.completeness.observedSince)}.`,
+    '',
+  ];
+
+  if (report.completeness.reasons.length > 0) {
+    for (const reason of report.completeness.reasons) lines.push(`- ${reason}`);
+  } else {
+    lines.push('- Все пять Core Web Vitals измерены, ограничения коллектора не зафиксированы.');
+  }
+
+  lines.push(
     '',
     '## Метрики (факты)',
     '',
@@ -149,7 +165,7 @@ export function generateMarkdownReport(
     '',
     '## Ограничения измерения',
     '',
-  ];
+  );
 
   if (report.limitations.length > 0) {
     for (const limitation of report.limitations) lines.push(`- ${limitation}`);

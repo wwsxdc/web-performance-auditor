@@ -207,6 +207,21 @@ describe('storage cleanup', () => {
     expect(await getSession('legacy-active')).toBeUndefined();
   });
 
+  it('drops an incompatible running experiment without deleting its supported session', async () => {
+    const supported = makeSession('supported', Date.now(), 'active');
+    await saveSession(supported);
+    await putRawRecord('experiments', {
+      ...makeExperiment('legacy-running', supported.id, 'running'),
+      schemaVersion: SCHEMA_VERSION - 1,
+    });
+
+    const deleted = await cleanOldSessions();
+
+    expect(deleted).toBe(0);
+    expect(await getAllExperiments()).toHaveLength(0);
+    expect((await getAllSessions()).some((session) => session.id === supported.id)).toBe(true);
+  });
+
   it('ignores stored records with an unsupported schema version', async () => {
     const legacySession = { ...makeSession('legacy-session', Date.now()), schemaVersion: SCHEMA_VERSION - 1 };
     const legacyExperiment = {

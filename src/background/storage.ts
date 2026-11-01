@@ -262,8 +262,15 @@ export async function cleanOldSessions(
   const db = await getDb();
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const sessions = await db.getAllFromIndex('sessions', 'by-date') as StoredSession[];
-  const experiments = ((await db.getAll('experiments')) as Experiment[])
-    .filter(hasSupportedSchemaVersion);
+  const allExperiments = (await db.getAll('experiments')) as Experiment[];
+  // Records written by an incompatible schema are unreadable by design; drop
+  // them during retention so they can never resurrect a running experiment.
+  for (const experiment of allExperiments) {
+    if (!hasSupportedSchemaVersion(experiment)) {
+      await db.delete('experiments', experiment.id);
+    }
+  }
+  const experiments = allExperiments.filter(hasSupportedSchemaVersion);
   // Protect every session referenced by an experiment (running or completed),
   // otherwise retention would cascade-delete a finished experiment and lose its
   // result. Explicit deletions still cascade through deleteSession().

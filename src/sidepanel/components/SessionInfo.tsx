@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AuditSession } from '../../types/session';
+import { CompletenessStatus } from './CompletenessStatus';
 
 interface SessionInfoProps {
   session: AuditSession;
@@ -21,7 +22,6 @@ export function SessionInfo({ session }: SessionInfoProps) {
   const measuredMetrics = new Set(
     session.metrics.filter((metric) => metric.status === 'measured').map((metric) => metric.name),
   ).size;
-
   const statusLabels: Record<AuditSession['status'], string> = {
     active: 'Активна',
     completed: 'Завершена',
@@ -54,6 +54,9 @@ export function SessionInfo({ session }: SessionInfoProps) {
       <div className="flex justify-between mt-1">
         <span>Метрик измерено:</span>
         <span className="font-medium text-gray-800">{measuredMetrics} / 5</span>
+      </div>
+      <div className="mt-1">
+        <CompletenessStatus session={session} />
       </div>
       <div className="flex justify-between mt-1">
         <span>Обновлений метрик:</span>

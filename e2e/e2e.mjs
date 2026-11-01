@@ -229,6 +229,20 @@ async function main() {
       state.session.metrics.some((metric) => metric.name === 'LCP' && metric.attribution),
       'LCP attribution present',
     );
+    const completenessPanel = await panel.evaluate(() => {
+      const text = document.body.innerText;
+      return {
+        hasRow: text.includes('Полнота данных:'),
+        labels: ['Полная', 'Частичная', 'Ограниченная'].filter((label) =>
+          text.includes(label),
+        ),
+      };
+    });
+    check(
+      'COMPLETENESS_STATUS',
+      completenessPanel.hasRow && completenessPanel.labels.length >= 1,
+      JSON.stringify(completenessPanel),
+    );
     check(
       'LONG_TASK_EVENT',
       state.session.events.some((event) => event.type === 'long-task'),
@@ -546,6 +560,7 @@ async function main() {
       'EXPORT_MARKDOWN',
       typeof markdown?.markdown === 'string' &&
         markdown.markdown.includes('## Эксперимент') &&
+        markdown.markdown.includes('## Полнота данных') &&
         markdown.markdown.includes('Очистка правил: completed') &&
         !markdown.markdown.includes('token=secret'),
       `length=${markdown?.markdown?.length ?? 0}`,
@@ -556,6 +571,9 @@ async function main() {
     check(
       'EXPORT_JSON',
       report?.reportVersion === 1 &&
+        ['full', 'partial', 'limited'].includes(report?.completeness?.level) &&
+        Array.isArray(report?.completeness?.reasons) &&
+        typeof report?.completeness?.observedSince === 'number' &&
         Array.isArray(report?.attribution) &&
         Array.isArray(report?.metrics) &&
         report.metrics.length > 0 &&

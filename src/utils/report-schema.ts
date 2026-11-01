@@ -11,6 +11,7 @@ const METRIC_UNITS = ['ms', 'score'];
 const METRIC_SOURCES = ['web-vitals', 'performance-api', 'derived'];
 const EXPERIMENT_STATUSES = ['running', 'completed', 'incomplete', 'failed', 'cancelled'];
 const CLEANUP_STATUSES = ['pending', 'completed', 'failed'];
+const COMPLETENESS_LEVELS = ['full', 'partial', 'limited'];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -211,6 +212,24 @@ export function validateJsonReport(value: unknown): ReportValidation {
   }
   if (!Array.isArray(value.limitations) || value.limitations.some((item) => typeof item !== 'string')) {
     errors.push('limitations должен быть массивом строк');
+  }
+
+  if (!isObject(value.completeness)) {
+    errors.push('completeness обязателен');
+  } else {
+    const completeness = value.completeness;
+    if (!isOneOf(completeness.level, COMPLETENESS_LEVELS)) {
+      errors.push('completeness.level некорректен');
+    }
+    if (
+      !Array.isArray(completeness.reasons) ||
+      completeness.reasons.some((item) => typeof item !== 'string')
+    ) {
+      errors.push('completeness.reasons должен быть массивом строк');
+    }
+    if (!isFiniteNumber(completeness.observedSince)) {
+      errors.push('completeness.observedSince обязателен');
+    }
   }
 
   const nonSerializable = findNonSerializable(value, 'report');

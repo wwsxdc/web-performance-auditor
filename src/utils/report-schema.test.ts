@@ -22,6 +22,7 @@ function makeReport(): JsonReport {
     events: [],
     experiments: [],
     limitations: [],
+    completeness: { level: 'full', reasons: [], observedSince: 1000 },
   };
 }
 
@@ -37,6 +38,24 @@ describe('validateJsonReport', () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors.join(' ')).toContain('attribution');
+  });
+
+  it('rejects a report without a completeness section', () => {
+    const report = makeReport() as Partial<JsonReport>;
+    delete report.completeness;
+    const result = validateJsonReport(report);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('completeness');
+  });
+
+  it('rejects an unknown completeness level', () => {
+    const report = makeReport();
+    (report.completeness as { level: string }).level = 'unknown';
+
+    const result = validateJsonReport(report);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('completeness.level');
   });
 
   it('rejects null metric values converted to zero and malformed metrics', () => {

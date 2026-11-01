@@ -48,6 +48,11 @@ const report: JsonReport = {
   events: [],
   experiments: [],
   limitations: ['LCP: метрика не была измерена за время сессии'],
+  completeness: {
+    level: 'partial',
+    reasons: ['INP: ожидает измерения'],
+    observedSince: 1_000,
+  },
 };
 
 const experiment: Experiment = {
@@ -86,6 +91,9 @@ describe('generateMarkdownReport', () => {
     expect(markdown).toContain('#hero > img');
     expect(markdown).toContain('Фазы: TTFB 200 мс');
     expect(markdown).toContain('## Ограничения измерения');
+    expect(markdown).toContain('## Полнота данных');
+    expect(markdown).toContain('Полнота данных: **Частичная**');
+    expect(markdown).toContain('- INP: ожидает измерения');
     expect(markdown).toContain('## Эксперимент');
     expect(markdown).toContain('-28.6%');
     expect(markdown).toContain('Прогноз улучшения недоступен');
