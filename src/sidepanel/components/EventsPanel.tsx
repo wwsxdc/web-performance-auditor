@@ -12,6 +12,7 @@ const FILTERS: { value: EventFilter; label: string }[] = [
   { value: 'interaction', label: 'INP' },
   { value: 'spa-navigation', label: 'SPA' },
   { value: 'experiment', label: 'Эксперименты' },
+  { value: 'collector-limitation', label: 'Ограничения' },
 ];
 
 const TYPE_LABELS: Record<DiagnosticEventType, string> = {
@@ -21,6 +22,7 @@ const TYPE_LABELS: Record<DiagnosticEventType, string> = {
   interaction: 'Взаимодействие',
   'spa-navigation': 'SPA-переход',
   experiment: 'Эксперимент',
+  'collector-limitation': 'Ограничение',
 };
 
 const DETAIL_LABELS: Record<string, string> = {
@@ -34,6 +36,8 @@ const DETAIL_LABELS: Record<string, string> = {
   to: 'Куда',
   source: 'Источник',
   experimentId: 'Эксперимент',
+  collector: 'Наблюдатель',
+  message: 'Описание',
 };
 
 function detailEntries(event: DiagnosticEvent): [string, string][] {
@@ -89,7 +93,7 @@ export function EventsPanel({ events }: EventsPanelProps) {
         <h2 id="events-heading" className="text-sm font-semibold text-gray-800">
           События диагностики
         </h2>
-        <span className="text-[11px] text-gray-400">{events.length}</span>
+        <span className="text-[11px] text-gray-500">{events.length}</span>
       </div>
       <p className="mt-1 text-[11px] text-gray-500">
         Long Tasks объединяются в серии, если идут подряд с паузой до 1 секунды.

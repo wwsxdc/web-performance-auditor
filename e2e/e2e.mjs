@@ -187,6 +187,14 @@ async function main() {
       `status=${recoveredState?.collectorStatus}`,
     );
 
+    const beforeInteraction = await getState();
+    const inpBefore = beforeInteraction?.session?.metrics?.find((metric) => metric.name === 'INP');
+    check(
+      'INP_PENDING_BEFORE_INTERACTION',
+      inpBefore === undefined,
+      `INP=${JSON.stringify(inpBefore ?? null)}`,
+    );
+
     await target.bringToFront();
     await target.click('#btn');
     await panel.bringToFront();
@@ -303,6 +311,25 @@ async function main() {
       'OVERLAY_ISOLATION',
       overlayState.zIndex === '2147483647' && overlayState.pointerEvents === 'none',
       'fixed host, pointer-events none',
+    );
+
+    await target.evaluate(() => document.querySelector('#hero')?.remove());
+    await target.bringToFront();
+    const staleState = await waitFor(
+      (candidate) => candidate?.overlayStatus?.available === false,
+      'stale target status',
+    );
+    const staleOverlay = await target.evaluate(() => {
+      const lcpBox = document
+        .getElementById('wpa-diagnostic-overlay-LCP')
+        ?.shadowRoot?.querySelector('.box');
+      return lcpBox?.style.display ?? 'missing';
+    });
+    check(
+      'STALE_TARGET',
+      staleState.overlayStatus?.available === false &&
+        (staleOverlay === 'none' || staleOverlay === 'missing'),
+      `available=${staleState.overlayStatus?.available}, display=${staleOverlay}`,
     );
 
     await panel.evaluate(() => {

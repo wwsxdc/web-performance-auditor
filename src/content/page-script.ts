@@ -679,6 +679,7 @@ function initCollector(): CollectorHandle {
   const seenLayoutShiftIds = new Set<string>();
   const seenInteractionIds = new Set<number>();
   const interactionTimers = new Set<number>();
+  const collectorLimitations = new Set<string>();
   const recentEvents: Array<Record<string, unknown>> = [];
   const pendingInteractions = new Map<
     number,
@@ -691,6 +692,21 @@ function initCollector(): CollectorHandle {
       tagName: string | null;
     }
   >();
+
+  const collectorLimitationEvent = (collector: string): Record<string, unknown> => ({
+    eventId: `limitation-${DOCUMENT_TOKEN.slice(0, 8)}-${collector}`,
+    eventType: 'collector-limitation',
+    timestamp: Date.now(),
+    details: {
+      collector,
+      message: `${collector}: исторические записи недоступны, сбор начат с момента подключения`,
+    },
+  });
+
+  const reportCollectorLimitation = (collector: string): void => {
+    collectorLimitations.add(collector);
+    sendEvent(collectorLimitationEvent(collector));
+  };
 
   const startLongTaskObserver = (buffered: boolean): void => {
     if (!longTaskSupported || longTaskObserver) return;
@@ -737,6 +753,11 @@ function initCollector(): CollectorHandle {
       longTaskObserverEverStarted = true;
     } catch (error) {
       longTaskObserver = null;
+      if (buffered) {
+        reportCollectorLimitation('LongTask');
+        startLongTaskObserver(false);
+        return;
+      }
       reportInitError('LongTask', error);
     }
   };
@@ -795,6 +816,11 @@ function initCollector(): CollectorHandle {
       layoutShiftObserverEverStarted = true;
     } catch (error) {
       layoutShiftObserver = null;
+      if (buffered) {
+        reportCollectorLimitation('LayoutShift');
+        startLayoutShiftObserver(false);
+        return;
+      }
       reportInitError('LayoutShift', error);
     }
   };
@@ -836,6 +862,11 @@ function initCollector(): CollectorHandle {
       interactionObserverEverStarted = true;
     } catch (error) {
       interactionObserver = null;
+      if (buffered) {
+        reportCollectorLimitation('Interaction');
+        startInteractionObserver(false);
+        return;
+      }
       reportInitError('Interaction', error);
     }
   };
@@ -932,8 +963,13 @@ function initCollector(): CollectorHandle {
       startInteractionObserver(!interactionObserverEverStarted);
       // Events observed before the bridge was injected are replayed with their
       // stable ids; the background upserts by id, so re-injection is idempotent.
+      const recentEventIds = new Set(recentEvents.map((event) => event.eventId));
       for (const event of recentEvents) {
         sendToExtension('EVENT', event);
+      }
+      for (const collector of collectorLimitations) {
+        const event = collectorLimitationEvent(collector);
+        if (!recentEventIds.has(event.eventId)) sendToExtension('EVENT', event);
       }
       for (const { metric, source, attribution, updateId, observedAt } of latest.values()) {
         // Reuse the row id and original timestamp: bridge re-injection must

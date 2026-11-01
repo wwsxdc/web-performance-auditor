@@ -38,6 +38,7 @@ const EVENT_TYPES: readonly DiagnosticEventType[] = [
   'interaction',
   'spa-navigation',
   'experiment',
+  'collector-limitation',
 ];
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -134,7 +135,8 @@ export function isPageToContentMessage(value: unknown): value is PageToContentMe
         (payload.eventType === 'long-task' ||
           payload.eventType === 'interaction' ||
           payload.eventType === 'layout-shift' ||
-          payload.eventType === 'metric-update') &&
+          payload.eventType === 'metric-update' ||
+          payload.eventType === 'collector-limitation') &&
         isNumber(payload.timestamp) &&
         (payload.duration === undefined || isNumber(payload.duration)) &&
         (payload.details === undefined || isBoundedDetails(payload.details)) &&

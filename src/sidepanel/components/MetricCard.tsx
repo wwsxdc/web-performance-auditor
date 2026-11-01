@@ -74,13 +74,13 @@ export function MetricCard({
 
         {isWaiting ? (
           <div>
-            <p className="text-xl font-mono text-gray-400">—</p>
-            <p className="text-xs text-gray-400 mt-0.5">Ожидание…</p>
+            <p className="text-xl font-mono text-gray-500">—</p>
+            <p className="text-xs text-gray-500 mt-0.5">Ожидание…</p>
           </div>
         ) : isUnsupported || isUnavailable ? (
           <div>
-            <p className="text-xl font-mono text-gray-400">—</p>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xl font-mono text-gray-500">—</p>
+            <p className="text-xs text-gray-500 mt-0.5">
               {isUnsupported
                 ? 'Не поддерживается'
                 : metric?.status === 'incomplete'
@@ -101,12 +101,12 @@ export function MetricCard({
           </div>
         ) : (
           <div>
-            <p className="text-xl font-mono text-gray-400">—</p>
-            <p className="text-xs text-gray-400 mt-0.5">Нет данных</p>
+            <p className="text-xl font-mono text-gray-500">—</p>
+            <p className="text-xs text-gray-500 mt-0.5">Нет данных</p>
           </div>
         )}
 
-        <p className="text-[10px] mt-1.5 text-gray-400">
+        <p className="text-[10px] mt-1.5 text-gray-500">
           Цель: ≤ {threshold.unit === 'ms' ? `${threshold.good} мс` : threshold.good}
         </p>
       </button>

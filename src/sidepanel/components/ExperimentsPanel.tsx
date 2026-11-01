@@ -136,7 +136,7 @@ function ComparisonTable({ experiment }: { experiment: Experiment }) {
           })}
         </tbody>
       </table>
-      <p className="mt-1.5 text-[10px] text-gray-400">
+      <p className="mt-1.5 text-[10px] text-gray-500">
         Если метрика недоступна в одной из сессий, разница не рассчитывается. Прогноз улучшения недоступен:
         сравниваются только фактические измерения.
       </p>

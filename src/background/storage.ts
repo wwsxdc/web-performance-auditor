@@ -85,6 +85,10 @@ export interface StoredSession {
   experimentIds: string[];
 }
 
+function hasSupportedSchemaVersion(record: { schemaVersion?: unknown }): boolean {
+  return record.schemaVersion === SCHEMA_VERSION;
+}
+
 export async function saveSession(session: AuditSession): Promise<void> {
   const db = await getDb();
   const { metrics: _metrics, events: _events, ...sessionData } = session;
@@ -126,13 +130,16 @@ function normalizeExperiment(experiment: Experiment): Experiment {
 export async function getExperiment(experimentId: string): Promise<Experiment | undefined> {
   const db = await getDb();
   const experiment = (await db.get('experiments', experimentId)) as Experiment | undefined;
-  return experiment ? normalizeExperiment(experiment) : undefined;
+  return experiment && hasSupportedSchemaVersion(experiment)
+    ? normalizeExperiment(experiment)
+    : undefined;
 }
 
 export async function getAllExperiments(): Promise<Experiment[]> {
   const db = await getDb();
   const experiments = (await db.getAll('experiments')) as Experiment[];
   return experiments
+    .filter(hasSupportedSchemaVersion)
     .map(normalizeExperiment)
     .sort((left, right) => right.createdAt - left.createdAt);
 }
@@ -151,6 +158,7 @@ export async function getExperimentsForSession(sessionId: string): Promise<Exper
   ) as Experiment[];
   const unique = new Map<string, Experiment>();
   for (const experiment of [...asBaseline, ...asResult]) {
+    if (!hasSupportedSchemaVersion(experiment)) continue;
     unique.set(experiment.id, normalizeExperiment(experiment));
   }
   return [...unique.values()].sort((left, right) => right.createdAt - left.createdAt);
@@ -159,7 +167,7 @@ export async function getExperimentsForSession(sessionId: string): Promise<Exper
 export async function getSession(sessionId: string): Promise<AuditSession | undefined> {
   const db = await getDb();
   const session = await db.get('sessions', sessionId) as StoredSession | undefined;
-  if (!session) return undefined;
+  if (!session || !hasSupportedSchemaVersion(session)) return undefined;
 
   const metrics = await db.getAllFromIndex('metrics', 'by-session', sessionId) as MetricRecord[];
   const events = await db.getAllFromIndex('events', 'by-session', sessionId) as DiagnosticEvent[];
@@ -195,7 +203,8 @@ export async function countMetrics(sessionId: string): Promise<number> {
 
 export async function getAllSessions(): Promise<StoredSession[]> {
   const db = await getDb();
-  return db.getAll('sessions') as Promise<StoredSession[]>;
+  const sessions = await db.getAll('sessions') as StoredSession[];
+  return sessions.filter(hasSupportedSchemaVersion);
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -242,7 +251,8 @@ export async function cleanOldSessions(
   const db = await getDb();
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const sessions = await db.getAllFromIndex('sessions', 'by-date') as StoredSession[];
-  const experiments = await db.getAll('experiments') as Experiment[];
+  const experiments = ((await db.getAll('experiments')) as Experiment[])
+    .filter(hasSupportedSchemaVersion);
   // Protect every session referenced by an experiment (running or completed),
   // otherwise retention would cascade-delete a finished experiment and lose its
   // result. Explicit deletions still cascade through deleteSession().
@@ -262,10 +272,12 @@ export async function cleanOldSessions(
   let deleted = 0;
 
   for (const session of sessions) {
+    const supported = hasSupportedSchemaVersion(session);
     if (
-      session.startedAt < cutoff &&
-      session.status !== 'active' &&
-      !protectedSessionIds.has(session.id)
+      !supported ||
+      (session.startedAt < cutoff &&
+        session.status !== 'active' &&
+        !protectedSessionIds.has(session.id))
     ) {
       await deleteSession(session.id);
       deleted++;
@@ -279,12 +291,15 @@ export async function cleanOldSessions(
   if (excess > 0) {
     const remaining = new Set(allSessions.map((session) => session.id));
     const statusById = new Map(allSessions.map((session) => [session.id, session.status]));
+    const supportedById = new Map(
+      allSessions.map((session) => [session.id, hasSupportedSchemaVersion(session)]),
+    );
     const sorted = [...allSessions].sort((a, b) => a.startedAt - b.startedAt);
 
     const canDelete = (id: string): boolean =>
       remaining.has(id) &&
-      statusById.get(id) !== 'active' &&
-      !runningSessionIds.has(id);
+      (!supportedById.get(id) ||
+        (statusById.get(id) !== 'active' && !runningSessionIds.has(id)));
 
     for (const session of sorted) {
       if (excess <= 0) break;

@@ -573,6 +573,24 @@ describe('SessionManager', () => {
     expect(report?.metrics.map((metric) => rawId(metric.id))).toEqual(['good']);
   });
 
+  it('includes collector limitations in exported report limitations', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    await manager.addEvent(
+      {
+        id: 'limitation-1',
+        type: 'collector-limitation',
+        timestamp: 1000,
+        details: { message: 'LongTask: исторические записи недоступны' },
+      },
+      1,
+    );
+
+    const report = await manager.generateReport(session.id);
+    expect(report?.limitations).toContain('LongTask: исторические записи недоступны');
+  });
+
   it('enforces the per-session diagnostic event limit', async () => {
     const manager = new SessionManager();
     const session = await manager.startSession(1, 'https://example.com/');

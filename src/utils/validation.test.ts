@@ -58,8 +58,19 @@ describe('isPageToContentMessage', () => {
     };
 
     expect(isEventType('long-task')).toBe(true);
+    expect(isEventType('collector-limitation')).toBe(true);
     expect(isEventType('unknown')).toBe(false);
     expect(isPageToContentMessage(event)).toBe(true);
+    expect(
+      isPageToContentMessage({
+        ...event,
+        payload: {
+          ...event.payload,
+          eventType: 'collector-limitation',
+          details: { collector: 'LongTask' },
+        },
+      }),
+    ).toBe(true);
     expect(
       isPageToContentMessage({
         ...event,

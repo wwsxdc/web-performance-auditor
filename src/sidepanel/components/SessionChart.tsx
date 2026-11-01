@@ -215,7 +215,7 @@ export function SessionChart({ session }: SessionChartProps) {
         </ResponsiveContainer>
       </div>
 
-      <p className="mt-1 text-[10px] text-gray-400">
+      <p className="mt-1 text-[10px] text-gray-500">
         Пунктир: синий — SPA-переход, серый — документ, оранжевый — Long Task,
         фиолетовый — эксперимент.
       </p>

@@ -72,7 +72,7 @@ export function DiagnosticsPanel() {
           </button>
         </div>
       </div>
-      <p className="mt-1 text-[10px] text-gray-400">
+      <p className="mt-1 text-[10px] text-gray-500">
         Технические ошибки расширения. Содержимое страницы и поля форм сюда не записываются.
       </p>
       {entries.length === 0 ? (

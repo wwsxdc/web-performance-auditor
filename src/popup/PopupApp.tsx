@@ -34,6 +34,7 @@ export function PopupApp() {
   const status = state?.collectorStatus ?? 'idle';
   const session = state?.session;
   const isActive = session?.status === 'active';
+  const startedAt = session ? new Date(session.startedAt).toLocaleTimeString('ru-RU') : null;
 
   if (isLoading) {
     return <p className="p-4 text-sm text-gray-500">Загрузка...</p>;
@@ -48,6 +49,11 @@ export function PopupApp() {
             <p className="mt-0.5 truncate text-[11px] text-gray-500" title={session?.url ?? state?.activeTabUrl ?? ''}>
               {session?.url ?? state?.activeTabUrl ?? 'URL не определён'}
             </p>
+            {startedAt && (
+              <p className="mt-0.5 text-[10px] text-gray-500">
+                Начало сессии: <span className="font-medium text-gray-700">{startedAt}</span>
+              </p>
+            )}
           </div>
           <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-600">
             {STATUS_LABELS[status]}
@@ -107,7 +113,7 @@ export function PopupApp() {
         </ul>
       </section>
 
-      <p className="mt-3 text-[10px] text-gray-400">
+      <p className="mt-3 text-[10px] text-gray-500">
         Это компактный интерфейс для браузеров без Side Panel API. Полные детали, график и
         эксперименты доступны в боковой панели там, где она поддерживается.
       </p>

@@ -4,7 +4,8 @@ export type DiagnosticEventType =
   | 'long-task'
   | 'interaction'
   | 'spa-navigation'
-  | 'experiment';
+  | 'experiment'
+  | 'collector-limitation';
 
 export interface DiagnosticEvent {
   id: string;

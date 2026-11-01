@@ -40,6 +40,7 @@ const EVENT_LABELS: Record<DiagnosticEventType, string> = {
   interaction: 'Взаимодействие',
   'spa-navigation': 'SPA-навигация',
   experiment: 'Действие эксперимента',
+  'collector-limitation': 'Ограничение сбора',
 };
 
 function reliabilityNote(metric: MetricRecord): string {
@@ -122,7 +123,7 @@ function TargetCard({
     <div className={`rounded-lg border p-2.5 ${isMissing ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wide text-gray-400">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">
             {index === undefined ? 'DOM-цель' : `Источник ${index + 1}`}
           </p>
           <p className="font-mono text-xs text-gray-800 break-all">
@@ -277,7 +278,7 @@ export function MetricDetails({
       </div>
 
       {attribution?.derived && attribution.derived.length > 0 && (
-        <p className="mt-2 text-[10px] text-gray-400">
+        <p className="mt-2 text-[10px] text-gray-500">
           Производные поля расширения: {attribution.derived.join(', ')}
         </p>
       )}
@@ -408,7 +409,7 @@ export function MetricDetails({
               Пересекающиеся Long Tasks не обнаружены.
             </p>
           )}
-          <p className="mt-1.5 text-[10px] text-gray-400">
+          <p className="mt-1.5 text-[10px] text-gray-500">
             Совпадение по времени не доказывает, что Long Task вызвала задержку INP.
           </p>
         </div>
@@ -482,7 +483,7 @@ export function MetricDetails({
             Для этого навигационного сегмента связанные события не зафиксированы.
           </p>
         )}
-        <p className="mt-1.5 text-[10px] text-gray-400">
+        <p className="mt-1.5 text-[10px] text-gray-500">
           События относятся к тому же навигационному сегменту; совпадение по времени не доказывает причинную связь.
         </p>
       </div>

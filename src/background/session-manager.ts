@@ -855,6 +855,14 @@ export class SessionManager {
       limitations.push('INP требует пользовательского взаимодействия для измерения');
     }
 
+    for (const event of session.events) {
+      if (event.type !== 'collector-limitation') continue;
+      const message = event.details?.message;
+      if (typeof message === 'string' && !limitations.includes(message)) {
+        limitations.push(message);
+      }
+    }
+
     return limitations;
   }
 

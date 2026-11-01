@@ -25,7 +25,7 @@ export function ErrorView({ status, message, children }: ErrorViewProps) {
     <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
       <h2 className="text-lg font-bold text-gray-900 mb-2">{title}</h2>
       <p className="text-sm text-gray-600 max-w-sm mb-4">{description}</p>
-      <p className="text-xs text-gray-400 max-w-sm">{suggestion}</p>
+      <p className="text-xs text-gray-500 max-w-sm">{suggestion}</p>
       {children && <div className="mt-6 w-full max-w-md text-left">{children}</div>}
     </div>
   );

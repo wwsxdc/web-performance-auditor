@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Chrome extension for local Core Web Vitals auditing with DOM attribution and experiments.",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "keywords": [
     "chrome-extension",
@@ -12,7 +13,7 @@
     "manifest-v3"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "scripts": {
     "dev": "vite",

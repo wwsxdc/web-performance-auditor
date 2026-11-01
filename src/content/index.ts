@@ -19,9 +19,9 @@ interface HighlightTarget {
 }
 
 const OVERLAY_COLORS: Record<HighlightTarget['color'], string> = {
-  green: '#16a34a',
-  red: '#dc2626',
-  yellow: '#eab308',
+  green: '#15803d',
+  red: '#b91c1c',
+  yellow: '#a16207',
 };
 
 interface OverlayRuntime {

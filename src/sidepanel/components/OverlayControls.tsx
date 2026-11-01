@@ -46,7 +46,7 @@ export function OverlayControls({
       <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
         Оверлеи на странице
       </legend>
-      <p className="text-[10px] text-gray-400">
+      <p className="text-[10px] text-gray-500">
         Включённые категории подсвечиваются автоматически. Чтобы выбрать другой источник CLS,
         откройте «Детали» → «Подсветить». Внутри cross-origin iframe браузер не даёт
         расширению доступ к DOM, поэтому такая цель не подсвечивается, но диагностика сохраняется.
@@ -69,14 +69,14 @@ export function OverlayControls({
                 className="h-3.5 w-3.5"
               />
               <span className="font-semibold">{category.label}</span>
-              <span className="text-[10px] text-gray-400">{category.hint}</span>
+              <span className="text-[10px] text-gray-500">{category.hint}</span>
               <span
                 className={`ml-auto text-[10px] ${
                   state?.available === false
                     ? 'text-red-600'
                     : state?.available
                       ? 'text-green-700'
-                      : 'text-gray-400'
+                      : 'text-gray-500'
                 }`}
                 aria-live="polite"
               >
@@ -87,7 +87,7 @@ export function OverlayControls({
         })}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="text-[10px] text-gray-400">
+        <p className="text-[10px] text-gray-500">
           Выключенная категория не подсвечивается, но диагностика остаётся доступна.
         </p>
         <button

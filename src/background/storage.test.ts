@@ -11,6 +11,7 @@ import {
   getAllSessions,
   getExperiment,
   getExperimentsForSession,
+  getSession,
   saveExperiment,
   saveSession,
 } from './storage';
@@ -54,6 +55,26 @@ function makeExperiment(id: string, baselineSessionId: string, status: Experimen
     limitations: [],
     cleanupStatus: 'pending',
   };
+}
+
+function putRawRecord(store: 'sessions' | 'experiments', value: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('wpa-store');
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(value);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    };
+    request.onerror = () => reject(request.error);
+  });
 }
 
 beforeEach(async () => {
@@ -131,5 +152,34 @@ describe('storage cleanup', () => {
     expect(await getExperiment('experiment')).toBeUndefined();
     expect(await getAllExperiments()).toHaveLength(0);
     expect(await getAllSessions()).toHaveLength(1);
+  });
+
+  it('reclaims unsupported-schema sessions during cleanup even when marked active', async () => {
+    const legacySession = {
+      ...makeSession('legacy-active', Date.now(), 'active'),
+      schemaVersion: SCHEMA_VERSION - 1,
+    };
+    await putRawRecord('sessions', legacySession);
+
+    const deleted = await cleanOldSessions();
+
+    expect(deleted).toBe(1);
+    expect(await getSession('legacy-active')).toBeUndefined();
+  });
+
+  it('ignores stored records with an unsupported schema version', async () => {
+    const legacySession = { ...makeSession('legacy-session', Date.now()), schemaVersion: SCHEMA_VERSION - 1 };
+    const legacyExperiment = {
+      ...makeExperiment('legacy-experiment', legacySession.id, 'completed'),
+      schemaVersion: SCHEMA_VERSION - 1,
+    };
+    await putRawRecord('sessions', legacySession);
+    await putRawRecord('experiments', legacyExperiment);
+
+    expect(await getSession('legacy-session')).toBeUndefined();
+    expect(await getExperiment('legacy-experiment')).toBeUndefined();
+    expect(await getAllSessions()).toEqual([]);
+    expect(await getAllExperiments()).toEqual([]);
+    expect(await getExperimentsForSession('legacy-session')).toEqual([]);
   });
 });
