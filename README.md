@@ -72,14 +72,18 @@ npm run lint       # ESLint
 npm run verify     # typecheck + lint + test + build
 npm run e2e        # E2E по уже собранному dist/
 npm run test:e2e   # build + E2E
+npm run a11y       # axe-core + keyboard-гейт по собранному dist/
+npm run test:a11y  # build + a11y
+npm run bench      # benchmark накладных расходов коллектора
+npm run bench:collector  # build + benchmark
 ```
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify` и E2E на
-Ubuntu при push, pull request и ручном запуске. Собранное расширение из job
-`verify` публикуется как artifact `web-performance-auditor-dist` (хранится 7
-дней).
+GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify`, E2E и
+accessibility-гейт на Ubuntu при push, pull request и ручном запуске. Собранное
+расширение из job `verify` публикуется как artifact
+`web-performance-auditor-dist` (хранится 7 дней).
 
 Исходники инжектируемых скриптов лежат в `src/content/`. Файлы в
 `public/generated/` и `dist/` собираются автоматически (`wpa-injected-scripts`
@@ -88,11 +92,13 @@ Ubuntu при push, pull request и ручном запуске. Собранн�
 ### E2E
 
 `e2e/e2e.mjs` запускает Chrome с распакованным `dist/`, поднимает локальный
-fixture-сервер и проверяет 37 сценариев: сбор всех пяти метрик, отсутствие
+fixture-сервер и проверяет 40 сценариев: сбор всех пяти метрик, отсутствие
 фиктивного INP до взаимодействия, attribution, Long Tasks, детали метрики,
-мультиоверлеи, устаревшие DOM-цели, авторизацию сообщений, документные и
-SPA-навигации, DNR эксперимента, очистку правил, Markdown/JSON и очистку истории. Повторные callback одной метрики сохраняются как обновления,
-а в экспорт попадает по одной актуальной записи на метрику/сегмент.
+мультиоверлеи, устаревшие/заменённые/перемещённые DOM-цели, авторизацию
+сообщений, документные и SPA-навигации, DNR эксперимента, очистку правил,
+Markdown/JSON и очистку истории. Повторные callback одной метрики сохраняются
+как обновления, а в экспорт попадает по одной актуальной записи на
+метрику/сегмент.
 
 ```bash
 npm run test:e2e
@@ -103,6 +109,28 @@ HEADLESS=1 npm run test:e2e   # headless-режим
 выбирается Chrome for Testing: обычная сборка Chrome игнорирует
 `--load-extension`. Для сценария блокировки используется домен `blocked.test`,
 который резолвится в `127.0.0.1` через `--host-resolver-rules`.
+
+### Accessibility
+
+`e2e/a11y.mjs` прогоняет axe-core по десяти состояниям Side Panel и popup
+(пустые вкладки, ошибка неподдерживаемой страницы, сессия на всех вкладках) и
+дополнительно проверяет keyboard-путь: фокус по `Tab`, видимое кольцо фокуса и
+переключение вкладки клавишей `Enter`. Сборка падает только на нарушениях
+`serious`/`critical`; текущий результат — 0 нарушений во всех состояниях.
+
+```bash
+npm run test:a11y
+HEADLESS=1 npm run test:a11y
+```
+
+### Производительность коллектора
+
+`npm run bench:collector` (`e2e/perf.mjs`) сравнивает fixture-страницу с
+расширением и без него по CDP-счётчикам `TaskDuration`, `ScriptDuration`,
+`LayoutCount`, `JSHeapUsedSize` и `loadEventEnd`. Бюджет: рост `TaskDuration`
+не более 5 % (или 25 мс), рост heap не более 1,5 МБ. Методика, зафиксированный
+результат и решение по разделению page script описаны в
+[`docs/performance/collector-overhead.md`](docs/performance/collector-overhead.md).
 
 ## Как пользоваться
 

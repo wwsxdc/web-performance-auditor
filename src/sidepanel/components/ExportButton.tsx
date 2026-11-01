@@ -56,7 +56,6 @@ export function ExportButton({ sessionId }: ExportButtonProps) {
         onClick={handleExport}
         disabled={exporting}
         className="px-4 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        aria-label="Экспортировать отчёт в JSON"
       >
         {exporting ? 'Экспорт...' : 'Экспорт JSON'}
       </button>

@@ -23,6 +23,10 @@
     "test:watch": "vitest",
     "e2e": "node e2e/e2e.mjs",
     "test:e2e": "npm run build && npm run e2e",
+    "a11y": "node e2e/a11y.mjs",
+    "test:a11y": "npm run build && npm run a11y",
+    "bench": "node e2e/perf.mjs",
+    "bench:collector": "npm run build && npm run bench",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build"
@@ -43,6 +47,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "axe-core": "^4.14.0",
     "esbuild": "^0.28.2",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",

@@ -50,3 +50,8 @@ jobs:
         env:
           HEADLESS: '1'
           WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - name: Accessibility audit (axe-core)
+        run: npm run a11y
+        env:
+          HEADLESS: '1'
+          WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}

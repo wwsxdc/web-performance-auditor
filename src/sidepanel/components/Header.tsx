@@ -56,7 +56,6 @@ export function Header({ url, status, sessionStartedAt, onStart, onStop }: Heade
               ? 'bg-red-100 text-red-700 hover:bg-red-200 focus:ring-red-500'
               : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
           }`}
-          aria-label={isActive ? 'Остановить наблюдение' : 'Начать аудит'}
         >
           {isActive ? 'Стоп' : 'Аудит'}
         </button>

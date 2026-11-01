@@ -54,7 +54,6 @@ export function MetricCard({
         onClick={() => onSelect(name)}
         aria-pressed={isSelected}
         className="w-full rounded-xl p-3 pb-9 text-left"
-        aria-label={`Метрика ${name}${hasAttribution ? ', доступна диагностика' : ''}`}
       >
         <div className="flex items-center justify-between mb-1">
           <h3 className={`text-sm font-bold ${style.text}`}>{name}</h3>
@@ -94,7 +93,7 @@ export function MetricCard({
               {displayValue}
             </p>
             {style.label && (
-              <p className={`text-xs mt-0.5 font-medium ${style.text} opacity-80`}>
+              <p className={`text-xs mt-0.5 font-medium ${style.text}`}>
                 {style.label}
               </p>
             )}
@@ -115,7 +114,7 @@ export function MetricCard({
         <button
           type="button"
           onClick={onHighlight}
-          aria-label={`${highlighted ? 'Скрыть' : 'Показать'} ${name} на странице`}
+          aria-label={`${highlighted ? 'Скрыть' : 'Подсветить'} ${name} на странице`}
           className={`absolute bottom-2 right-2 rounded-md border px-2 py-1 text-[10px] font-medium ${
             highlighted
               ? 'border-gray-800 bg-gray-800 text-white hover:bg-gray-700'

@@ -202,12 +202,12 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-center">
+      <main className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center" role="status">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
           <p className="text-gray-500 text-sm">Загрузка...</p>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -223,7 +223,7 @@ export default function App() {
 
   if (collectorStatus === 'unsupported' || collectorStatus === 'permission-denied') {
     return (
-      <div className="flex min-h-screen flex-col bg-gray-50 p-4">
+      <main className="flex min-h-screen flex-col bg-gray-50 p-4">
         <Header
           url={state?.activeTabUrl}
           status={collectorStatus}
@@ -234,7 +234,7 @@ export default function App() {
         <ErrorView status={collectorStatus} message={state?.error}>
           <DataCleanup onCleared={handleCleared} />
         </ErrorView>
-      </div>
+      </main>
     );
   }
 
@@ -354,7 +354,7 @@ export default function App() {
   const showData = view === 'data';
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <main className="min-h-screen bg-gray-50 p-4">
       <Header
         url={session?.url ?? state?.activeTabUrl}
         status={collectorStatus}
@@ -495,6 +495,6 @@ export default function App() {
           <DataCleanup onCleared={handleCleared} />
         </div>
       )}
-    </div>
+    </main>
   );
 }

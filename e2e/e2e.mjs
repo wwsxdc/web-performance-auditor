@@ -9,46 +9,16 @@
  * WPA_CHROME_PATH overrides the detected Chrome executable.
  */
 import puppeteer from 'puppeteer-core';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extensionLaunchArgs, findChrome } from './chrome.mjs';
 import { startFixtureServer } from './server.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const headless = process.env.HEADLESS === '1';
-
-function findChrome() {
-  const testingCandidates = [];
-  const cacheRoot = path.join(homedir(), '.cache', 'puppeteer', 'chrome');
-  if (existsSync(cacheRoot)) {
-    for (const entry of readdirSync(cacheRoot)) {
-      testingCandidates.push(path.join(cacheRoot, entry, 'chrome-win64', 'chrome.exe'));
-      testingCandidates.push(path.join(cacheRoot, entry, 'chrome-linux64', 'chrome'));
-    }
-  }
-
-  // Branded Chrome ignores --load-extension; prefer Chrome for Testing.
-  const candidates = [
-    process.env.WPA_CHROME_PATH,
-    ...testingCandidates,
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    path.join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-  ].filter(Boolean);
-
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (!found) {
-    throw new Error(
-      'Chrome не найден. Укажите WPA_CHROME_PATH или установите Chrome for Testing.',
-    );
-  }
-  return found;
-}
 
 const checks = [];
 function check(name, condition, details) {
@@ -72,17 +42,7 @@ async function main() {
       executablePath: findChrome(),
       headless,
       userDataDir,
-      args: [
-        `--disable-extensions-except=${dist}`,
-        `--load-extension=${dist}`,
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--host-resolver-rules=MAP blocked.test 127.0.0.1',
-        '--window-size=1280,900',
-        ...(process.platform === 'linux'
-          ? ['--no-sandbox', '--disable-setuid-sandbox']
-          : []),
-      ],
+      args: extensionLaunchArgs(dist),
     });
 
     const swTarget = await browser.waitForTarget(
@@ -144,7 +104,9 @@ async function main() {
     );
     const unsupportedPanel = await panel.evaluate(() => ({
       text: document.body.innerText,
-      hasStart: Boolean(document.querySelector('button[aria-label="Начать аудит"]')),
+      hasStart: [...document.querySelectorAll('button')].some(
+        (button) => button.textContent?.trim() === 'Аудит',
+      ),
     }));
     check(
       'UNSUPPORTED_RETRY_VISIBLE',
@@ -170,12 +132,16 @@ async function main() {
     await panel.waitForFunction(
       () =>
         !document.body.innerText.includes('Страница не поддерживается') &&
-        Boolean(document.querySelector('button[aria-label="Остановить наблюдение"]')),
+        [...document.querySelectorAll('button')].some(
+          (button) => button.textContent?.trim() === 'Стоп',
+        ),
       { timeout: 5000 },
     );
     const recoveredPanel = await panel.evaluate(() => ({
       text: document.body.innerText,
-      hasStop: Boolean(document.querySelector('button[aria-label="Остановить наблюдение"]')),
+      hasStop: [...document.querySelectorAll('button')].some(
+        (button) => button.textContent?.trim() === 'Стоп',
+      ),
     }));
     check(
       'UNSUPPORTED_RECOVERY',
@@ -254,7 +220,12 @@ async function main() {
       'INP measured after click',
     );
 
-    await panel.click('button[aria-label^="Метрика INP"]');
+    await panel.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find(
+        (candidate) => candidate.querySelector('h3')?.textContent?.trim() === 'INP',
+      );
+      button?.click();
+    });
     await panel.waitForFunction(() => document.body.innerText.includes('Детали INP'));
     const detailsText = await panel.evaluate(() => document.body.innerText);
     const detailsFlags = {
