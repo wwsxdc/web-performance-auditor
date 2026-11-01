@@ -17,6 +17,7 @@ import {
   REPORT_VERSION,
   EXTENSION_NAME,
   EXTENSION_VERSION,
+  EVENT_BATCHING,
   STORAGE_LIMITS,
 } from '../constants/config';
 import { METRIC_THRESHOLDS } from '../constants/thresholds';
@@ -91,6 +92,17 @@ export class SessionManager {
   private lastBroadcastAt = 0;
   private writeChain: Promise<unknown> = Promise.resolve();
 
+  // Diagnostic events are buffered and written in one IndexedDB transaction
+  // per batch (NFR 4.1). Only the active session may own the buffer.
+  private pendingEvents: DiagnosticEvent[] = [];
+  private pendingEventSessionId: string | null = null;
+  private eventFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private eventCount: {
+    sessionId: string;
+    persisted: number;
+    seen: Set<string>;
+  } | null = null;
+
   // Serialize session lifecycle mutations (start/end/navigation/reset),
   // metric/event writes, and collector-status updates (they may persist the
   // active pointer). Interleaving awaits would otherwise read stale fields and
@@ -121,7 +133,9 @@ export class SessionManager {
     if (this.currentSessionId) {
       await this.endSessionInternal(this.currentSessionId, 'completed');
     }
+    await this.flushEventsInternal();
     this.lastSessionId = null;
+    this.eventCount = null;
 
     const sessionId = generateId();
     const navId = generateId();
@@ -289,10 +303,6 @@ export class SessionManager {
       : this.activeNavigationId ?? this.documentNavigationId ?? '';
     if (!navigationId) return;
 
-    if ((await storage.countEvents(sessionId)) >= STORAGE_LIMITS.maxEventsPerSession) {
-      return;
-    }
-
     const event: DiagnosticEvent = {
       id: `${sessionId}:${rawEvent.id || generateId()}`,
       sessionId,
@@ -309,8 +319,106 @@ export class SessionManager {
     // an event into a session that is no longer the active one.
     if (this.currentSessionId !== sessionId) return;
 
-    await storage.saveEvent(event);
+    await this.queueEvent(event);
+  }
+
+  // Buffers a validated event and writes it once a batch fills up, the flush
+  // timer fires, or a lifecycle operation forces a flush.
+  private async queueEvent(event: DiagnosticEvent): Promise<void> {
+    const sessionId = event.sessionId;
+
+    // A new session must never inherit another session's buffer.
+    if (this.pendingEventSessionId && this.pendingEventSessionId !== sessionId) {
+      await this.flushEventsInternal();
+    }
+
+    if (!this.eventCount || this.eventCount.sessionId !== sessionId) {
+      this.eventCount = {
+        sessionId,
+        persisted: await storage.countEvents(sessionId),
+        seen: new Set(),
+      };
+    }
+    const counter = this.eventCount;
+
+    // Redelivery of an event we already accepted is a no-op: `put` already
+    // makes the write idempotent, but it must not consume the session limit.
+    if (counter.seen.has(event.id)) {
+      const index = this.pendingEvents.findIndex((pending) => pending.id === event.id);
+      if (index >= 0) this.pendingEvents[index] = event;
+      return;
+    }
+
+    if (
+      counter.persisted + this.pendingEvents.length >=
+      STORAGE_LIMITS.maxEventsPerSession
+    ) {
+      // Persist the buffer before dropping the overflow.
+      await this.flushEventsInternal();
+      if (counter.persisted >= STORAGE_LIMITS.maxEventsPerSession) return;
+    }
+
+    this.pendingEventSessionId = sessionId;
+    this.pendingEvents.push(event);
+    counter.seen.add(event.id);
+
+    if (this.pendingEvents.length >= EVENT_BATCHING.batchSize) {
+      await this.flushEventsInternal();
+      return;
+    }
+
+    this.scheduleEventFlush();
     this.scheduleBroadcast();
+  }
+
+  flushEvents(): Promise<void> {
+    return this.enqueue(() => this.flushEventsInternal());
+  }
+
+  private async flushEventsInternal(): Promise<void> {
+    this.clearEventFlushTimer();
+    const sessionId = this.pendingEventSessionId;
+    const events = this.pendingEvents;
+    this.pendingEvents = [];
+    this.pendingEventSessionId = null;
+    if (!sessionId || events.length === 0) return;
+
+    const counter = this.eventCount?.sessionId === sessionId ? this.eventCount : null;
+    let written = 0;
+    try {
+      written = await storage.saveEvents(events);
+    } catch (err) {
+      // One non-cloneable payload must not take the whole batch down: retry
+      // each record so the rest are still persisted.
+      console.warn('[WPA] Failed to write event batch, retrying individually:', err);
+      for (const event of events) {
+        try {
+          await storage.saveEvent(event);
+          written++;
+        } catch (writeError) {
+          // Allow a later redelivery of the dropped event to be retried.
+          counter?.seen.delete(event.id);
+          console.warn('[WPA] Dropped diagnostic event:', event.id, writeError);
+        }
+      }
+    }
+
+    if (counter) counter.persisted += written;
+    if (written > 0) this.scheduleBroadcast();
+  }
+
+  private scheduleEventFlush(): void {
+    if (this.eventFlushTimer) return;
+    this.eventFlushTimer = setTimeout(() => {
+      this.eventFlushTimer = null;
+      void this.enqueue(() => this.flushEventsInternal()).catch(console.error);
+    }, EVENT_BATCHING.flushIntervalMs);
+  }
+
+  private clearEventFlushTimer(): void {
+    if (!this.eventFlushTimer) return;
+    clearTimeout(this.eventFlushTimer);
+    this.eventFlushTimer = null;
   }
 
   setCollectorStatus(
@@ -420,6 +528,19 @@ export class SessionManager {
     const visibleSessionId = this.currentSessionId ?? this.lastSessionId;
     if (visibleSessionId) {
       session = (await storage.getSession(visibleSessionId)) ?? null;
+      // Surface buffered events immediately instead of waiting for a flush.
+      if (
+        session &&
+        session.id === this.pendingEventSessionId &&
+        this.pendingEvents.length > 0
+      ) {
+        const stored = new Set(session.events.map((event) => event.id));
+        const events = [
+          ...session.events,
+          ...this.pendingEvents.filter((event) => !stored.has(event.id)),
+        ].sort((left, right) => left.timestamp - right.timestamp);
+        session = { ...session, events };
+      }
     }
 
     // The panel should show the current URL even before an audit starts.
@@ -486,6 +607,8 @@ export class SessionManager {
     sessionId: string,
     status: AuditSession['status'],
   ): Promise<void> {
+    // Never end a session with events still buffered in memory.
+    await this.flushEventsInternal();
     const wasCurrent = this.currentSessionId === sessionId;
     const session = await storage.getSession(sessionId);
     if (session) {
@@ -507,6 +630,7 @@ export class SessionManager {
       this.activeTabId = null;
       this.activeTabUrl = null;
       this.overlayStatus = null;
+      this.eventCount = null;
       await this.clearActivePointer();
     }
     await this.broadcastState();
@@ -526,6 +650,8 @@ export class SessionManager {
   }
 
   private async resetInternal(): Promise<void> {
+    await this.flushEventsInternal();
+    this.eventCount = null;
     this.currentSessionId = null;
     this.lastSessionId = null;
     this.activeNavigationId = null;
@@ -583,6 +709,9 @@ export class SessionManager {
       return false;
     }
 
+    // Close the old segment only after its buffered events are on disk.
+    await this.flushEventsInternal();
+
     const previousNavigation = session.navigations.find(
       (navigation) => navigation.id === this.activeNavigationId,
     );
@@ -630,20 +759,14 @@ export class SessionManager {
     await storage.saveSession(session);
 
     if (kind === 'spa') {
-      const event: DiagnosticEvent = {
+      await this.queueEvent({
         id: `${session.id}:${generateId()}`,
         sessionId: session.id,
         navigationId,
         type: 'spa-navigation',
         timestamp: now,
         details: { url: sanitizeUrl(url) },
-      };
-      if (
-        (await storage.countEvents(session.id)) <
-        STORAGE_LIMITS.maxEventsPerSession
-      ) {
-        await storage.saveEvent(event);
-      }
+      });
     }
 
     await this.saveActivePointer({
@@ -658,7 +781,15 @@ export class SessionManager {
     return true;
   }
 
-  async generateReport(sessionId: string): Promise<JsonReport | null> {
+  generateReport(sessionId: string): Promise<JsonReport | null> {
+    // The export must include events that are still buffered.
+    return this.enqueue(async () => {
+      await this.flushEventsInternal();
+      return this.generateReportInternal(sessionId);
+    });
+  }
+
+  private async generateReportInternal(sessionId: string): Promise<JsonReport | null> {
     const session = await storage.getSession(sessionId);
     if (!session) return null;
     const experiments = (await storage.getExperimentsForSession(sessionId)).map(

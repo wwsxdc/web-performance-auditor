@@ -178,5 +178,11 @@ chrome.runtime.onInstalled.addListener(() => {
   void ensurePageCollector();
 });
 
+// Best effort: persist buffered diagnostic events before the worker is
+// suspended. Lifecycle operations (stop, navigation, reset) flush explicitly.
+chrome.runtime.onSuspend.addListener(() => {
+  void sessionManager.flushEvents().catch(console.error);
+});
+
 // Restore on script evaluation (covers SW restart)
 void restoreAndReinject().catch(console.error);

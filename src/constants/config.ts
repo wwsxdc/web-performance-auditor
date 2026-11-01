@@ -10,6 +10,14 @@ export const STORAGE_LIMITS = {
   sessionRetentionDays: 30,
 };
 
+// Diagnostic events are buffered in the service worker and written in one
+// IndexedDB transaction per batch (NFR 4.1). The timer bounds how long an
+// event can stay unwritten if the batch never fills up.
+export const EVENT_BATCHING = {
+  batchSize: 16,
+  flushIntervalMs: 75,
+};
+
 export const PAGE_MESSAGE_LIMITS = {
   maxBytes: 64 * 1024,
   maxStringLength: 512,

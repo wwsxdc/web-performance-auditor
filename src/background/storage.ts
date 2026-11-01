@@ -105,6 +105,17 @@ export async function saveEvent(event: DiagnosticEvent): Promise<void> {
   await db.put('events', event);
 }
 
+// Writes a whole batch in a single readwrite transaction. Event ids are
+// namespaced with the session id, so `put` keeps redelivery idempotent.
+// Returns the number of records the transaction committed.
+export async function saveEvents(events: DiagnosticEvent[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const db = await getDb();
+  const tx = db.transaction('events', 'readwrite');
+  await Promise.all([...events.map((event) => tx.store.put(event)), tx.done]);
+  return events.length;
+}
+
 export async function saveExperiment(experiment: Experiment): Promise<void> {
   const db = await getDb();
   await db.put('experiments', experiment);

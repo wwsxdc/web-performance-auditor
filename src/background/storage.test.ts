@@ -1,17 +1,20 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AuditSession } from '../types/session';
+import type { DiagnosticEvent } from '../types/events';
 import type { Experiment } from '../types/experiment';
 import { SCHEMA_VERSION } from '../constants/config';
 import {
   cleanOldSessions,
   clearAllData,
+  countEvents,
   deleteSession,
   getAllExperiments,
   getAllSessions,
   getExperiment,
   getExperimentsForSession,
   getSession,
+  saveEvents,
   saveExperiment,
   saveSession,
 } from './storage';
@@ -83,6 +86,43 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await clearAllData();
+});
+
+function makeEvent(sessionId: string, id: string, timestamp: number): DiagnosticEvent {
+  return {
+    id: `${sessionId}:${id}`,
+    sessionId,
+    navigationId: 'navigation-1',
+    type: 'long-task',
+    timestamp,
+    duration: 120,
+  };
+}
+
+describe('event batching', () => {
+  it('writes a batch in one transaction and is idempotent for repeated ids', async () => {
+    const session = makeSession('batch-session', Date.now(), 'active');
+    await saveSession(session);
+    const events = [
+      makeEvent(session.id, 'e1', 1000),
+      makeEvent(session.id, 'e2', 1001),
+      makeEvent(session.id, 'e3', 1002),
+    ];
+
+    expect(await saveEvents(events)).toBe(3);
+    expect(await countEvents(session.id)).toBe(3);
+
+    // Redelivery with the same ids overwrites instead of duplicating.
+    expect(await saveEvents([events[0]])).toBe(1);
+    expect(await countEvents(session.id)).toBe(3);
+
+    const stored = await getSession(session.id);
+    expect(stored?.events.map((event) => event.timestamp)).toEqual([1000, 1001, 1002]);
+  });
+
+  it('treats an empty batch as a no-op', async () => {
+    expect(await saveEvents([])).toBe(0);
+  });
 });
 
 describe('storage cleanup', () => {

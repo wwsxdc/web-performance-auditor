@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RESTORE_NAVIGATION_GRACE_MS, SessionManager } from './session-manager';
 import * as storage from './storage';
 import { validateJsonReport } from '../utils/report-schema';
-import { STORAGE_LIMITS } from '../constants/config';
+import { EVENT_BATCHING, STORAGE_LIMITS } from '../constants/config';
 
 const localStore = new Map<string, unknown>();
 
@@ -657,6 +657,157 @@ describe('SessionManager', () => {
     expect(replacement).toBeDefined();
     expect((await manager.generateReport(replacement!.id))?.events).toHaveLength(0);
     expect((await manager.generateReport(first.id))?.events).toHaveLength(1);
+  });
+
+  it('buffers diagnostic events and writes them as one batch', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    for (let index = 0; index < 5; index++) {
+      await manager.addEvent(
+        { id: `e${index}`, type: 'long-task', timestamp: 1000 + index, duration: 100 },
+        1,
+      );
+    }
+
+    // Below the batch size nothing has hit IndexedDB yet, but the live state
+    // already exposes the buffered events.
+    expect(await storage.countEvents(session.id)).toBe(0);
+    expect((await manager.getState()).session?.events).toHaveLength(5);
+
+    await manager.flushEvents();
+    expect(await storage.countEvents(session.id)).toBe(5);
+  });
+
+  it('flushes a full batch without an explicit flush call', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    for (let index = 0; index < EVENT_BATCHING.batchSize; index++) {
+      await manager.addEvent(
+        { id: `e${index}`, type: 'long-task', timestamp: 1000 + index, duration: 100 },
+        1,
+      );
+    }
+
+    expect(await storage.countEvents(session.id)).toBe(EVENT_BATCHING.batchSize);
+  });
+
+  it('flushes buffered events on navigation, stop, and reset', async () => {
+    const manager = new SessionManager();
+
+    const first = await manager.startSession(1, 'https://example.com/a');
+    await manager.addEvent(
+      { id: 'e1', type: 'long-task', timestamp: 1000, duration: 100 },
+      1,
+    );
+    await manager.handleNavigation(1, 'https://example.com/b', 'document');
+    expect(await storage.countEvents(first.id)).toBe(1);
+
+    await manager.addEvent(
+      { id: 'e2', type: 'long-task', timestamp: 2000, duration: 100 },
+      1,
+    );
+    await manager.endSession(first.id, 'completed');
+    expect(await storage.countEvents(first.id)).toBe(2);
+
+    const second = await manager.startSession(1, 'https://example.com/c');
+    await manager.addEvent(
+      { id: 'e3', type: 'long-task', timestamp: 3000, duration: 100 },
+      1,
+    );
+    await manager.reset();
+    expect(await storage.countEvents(second.id)).toBe(1);
+    expect((await manager.getState()).session).toBeNull();
+  });
+
+  it('keeps redelivered event ids idempotent', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    const event = { id: 'e1', type: 'long-task' as const, timestamp: 1000, duration: 100 };
+    await manager.addEvent(event, 1);
+    await manager.addEvent(event, 1);
+    await manager.flushEvents();
+    // Redelivery after the write must not create a second row either.
+    await manager.addEvent(event, 1);
+    await manager.flushEvents();
+
+    expect(await storage.countEvents(session.id)).toBe(1);
+    const report = await manager.generateReport(session.id);
+    expect(report?.events).toHaveLength(1);
+  });
+
+  it('does not let redelivered events consume the session event limit', async () => {
+    const originalLimit = STORAGE_LIMITS.maxEventsPerSession;
+    STORAGE_LIMITS.maxEventsPerSession = 3;
+    try {
+      const manager = new SessionManager();
+      const session = await manager.startSession(1, 'https://example.com/');
+
+      await manager.addEvent({ id: 'e0', type: 'long-task', timestamp: 1000 }, 1);
+      await manager.addEvent({ id: 'e1', type: 'long-task', timestamp: 1001 }, 1);
+      for (let index = 0; index < 5; index++) {
+        await manager.addEvent({ id: 'e1', type: 'long-task', timestamp: 1001 }, 1);
+      }
+      await manager.addEvent({ id: 'e2', type: 'long-task', timestamp: 1002 }, 1);
+      await manager.addEvent({ id: 'e3', type: 'long-task', timestamp: 1003 }, 1);
+
+      const report = await manager.generateReport(session.id);
+      expect(report?.events.map((event) => rawId(event.id))).toEqual(['e0', 'e1', 'e2']);
+      expect(await storage.countEvents(session.id)).toBe(3);
+    } finally {
+      STORAGE_LIMITS.maxEventsPerSession = originalLimit;
+    }
+  });
+
+  it('persists the rest of a batch when one event cannot be written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    await manager.addEvent(
+      {
+        id: 'bad',
+        type: 'long-task',
+        timestamp: 1000,
+        // Functions are not structured-cloneable, so IndexedDB rejects it.
+        details: { fn: () => undefined } as never,
+      },
+      1,
+    );
+    await manager.addEvent(
+      { id: 'good', type: 'long-task', timestamp: 1001, duration: 50 },
+      1,
+    );
+    await manager.flushEvents();
+
+    expect(await storage.countEvents(session.id)).toBe(1);
+    const report = await manager.generateReport(session.id);
+    expect(report?.events.map((event) => rawId(event.id))).toEqual(['good']);
+    warn.mockRestore();
+  });
+
+  it('writes far fewer transactions than events for a burst', async () => {
+    const manager = new SessionManager();
+    const session = await manager.startSession(1, 'https://example.com/');
+    const saveEvents = vi.spyOn(storage, 'saveEvents');
+    const saveEvent = vi.spyOn(storage, 'saveEvent');
+
+    for (let index = 0; index < 100; index++) {
+      await manager.addEvent(
+        { id: `e${index}`, type: 'long-task', timestamp: 1000 + index, duration: 100 },
+        1,
+      );
+    }
+    await manager.flushEvents();
+
+    const writes = saveEvents.mock.calls.length + saveEvent.mock.calls.length;
+    expect(await storage.countEvents(session.id)).toBe(100);
+    expect(writes).toBeLessThan(100);
+    expect(writes).toBeLessThanOrEqual(Math.ceil(100 / EVENT_BATCHING.batchSize) + 1);
+    saveEvents.mockRestore();
+    saveEvent.mockRestore();
   });
 
   it('records SPA transitions without replacing the document-load metrics', async () => {
