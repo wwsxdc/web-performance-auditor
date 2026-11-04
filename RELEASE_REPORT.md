@@ -75,14 +75,15 @@ SHA-256 и установка из zip. Данные не покидают пр�
 | `npm run package` | PASS, SHA-256 `b65c8485…b44f8894` |
 | Сборка из чистого checkout | PASS, SHA-256 совпадает |
 | `npm run verify:release` | PASS |
-| CI `41854387580` (`3d3e89d`) | PASS: verify, e2e, release |
+| CI `41856007621` (`f3bdc09`) | PASS: verify, e2e, release |
 
 ## 4. Release-артефакты
 
 - Тег: `v0.1.0`
 - GitHub Release: `https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.0`
-- Архив: `web-performance-auditor-0.1.0.zip`
+- Архив: `web-performance-auditor-0.1.0.zip` (258010 байт)
 - Checksum: `web-performance-auditor-0.1.0.zip.sha256`
+- SHA-256: `b65c84850cc1cab4b7cdd833bcf75cab25cfce8ec55b1f5c036b079bb44f8894`
 
 ## 5. Известные ограничения
 
