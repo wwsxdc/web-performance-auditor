@@ -249,14 +249,14 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         (value.metricName === undefined || isMetricName(value.metricName))
       );
 
-      case 'OVERLAY_STATUS':
-        return (
-          isString(value.requestId) &&
-          typeof value.available === 'boolean' &&
-          (value.targetId === undefined || isString(value.targetId)) &&
-          (value.metricName === undefined || isMetricName(value.metricName)) &&
-          (value.reason === undefined || isString(value.reason))
-        );
+    case 'OVERLAY_STATUS':
+      return (
+        isString(value.requestId) &&
+        typeof value.available === 'boolean' &&
+        (value.targetId === undefined || isString(value.targetId)) &&
+        (value.metricName === undefined || isMetricName(value.metricName)) &&
+        (value.reason === undefined || isString(value.reason))
+      );
 
     case 'METRIC_UPDATE': {
       if (!isString(value.requestId) || !isString(value.sessionId) || !isObject(value.metric)) {
@@ -295,25 +295,25 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     case 'STATE_UPDATE':
       return isString(value.requestId) && isObject(value.state);
 
-      case 'CLEAR_HISTORY':
-        return isString(value.requestId);
+    case 'CLEAR_HISTORY':
+      return isString(value.requestId);
 
-      case 'GET_SETTINGS':
-        return isString(value.requestId);
+    case 'GET_SETTINGS':
+      return isString(value.requestId);
 
-      case 'UPDATE_SETTINGS':
-        return isString(value.requestId) && isNumber(value.retentionDays);
+    case 'UPDATE_SETTINGS':
+      return isString(value.requestId) && isNumber(value.retentionDays);
 
-      case 'GET_DIAGNOSTICS':
-        return isString(value.requestId);
+    case 'GET_DIAGNOSTICS':
+      return isString(value.requestId);
 
-      case 'CLEAR_DIAGNOSTICS':
-        return isString(value.requestId);
+    case 'CLEAR_DIAGNOSTICS':
+      return isString(value.requestId);
 
-      case 'LOG_DIAGNOSTIC':
-        return isString(value.requestId) && isString(value.scope) && isString(value.message);
+    case 'LOG_DIAGNOSTIC':
+      return isString(value.requestId) && isString(value.scope) && isString(value.message);
 
-      case 'TAB_STATUS':
+    case 'TAB_STATUS':
       return (
         isString(value.requestId) &&
         isNumber(value.tabId) &&

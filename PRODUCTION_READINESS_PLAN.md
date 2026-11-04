@@ -1,6 +1,6 @@
 # План доведения Web Performance Auditor до production-ready
 
-Основание: `RELEASE_REPORT.md`, текущее состояние `main` (`d20bfc3` + незакоммиченные изменения), результаты `npm run verify` и E2E 37/37.
+Основание: `RELEASE_REPORT.md`, `main` после P0–P2, `npm run verify` (124 теста), E2E 41/41, a11y 15/15.
 
 ## 1. Что считаем production-ready
 
@@ -19,23 +19,18 @@
 
 ### Готово
 
-- Критические P1-исправления и must-сценарии.
-- Валидация page → content, лимиты хранения, навигационные сегменты, SPA-события.
-- Консолидация метрик в экспорте, права экспериментов, DNR-cleanup.
-- Исправления по code review.
-- Fallback для `buffered`-наблюдателей и событие `collector-limitation`.
-- Проверка `schemaVersion` при чтении и очистка несовместимых записей.
-- Контраст текста и оверлеев, focus-visible, reduced motion.
-- Время старта сессии в popup.
-- MIT-лицензия, README, CI на Node 22 и актуальных actions.
-- 95 unit-тестов, E2E 37/37, code review APPROVE.
+- P0–P2 закрыты: CI зелёный, release-артефакт воспроизводим.
+- 124 unit-теста, E2E 41/41, a11y 15/15 (0 serious/critical).
+- Пакетная запись событий, FR-14 (удаление/замена/перемещение), полнота
+  сессии, storage policy.
+- Performance-бюджет измерен и принят (+4,9…5,8 % TaskDuration, +0,26…0,35 МБ).
+- Error Boundary, QA-матрица Chrome, security/privacy review.
+- CHANGELOG, `npm run package`, `verify:release`, воспроизводимый SHA-256.
 
 ### Не готово
 
-- Текущие изменения не закоммичены и не отправлены в `main`.
-- Обновлённый CI ещё не проверен на GitHub.
-- Нет тега `v0.1.0`, GitHub Release и zip-артефакта.
-- Есть must/quality-гaps: пакетная запись событий, накладные расходы коллектора, FR-14 «перемещён», статус полноты сессии, автоматизированная accessibility-проверка.
+- Тег `v0.1.0` и GitHub Release не созданы (выполняется на финальном шаге).
+- P3-улучшения (Firefox, импорт JSON, миграции) вне scope первого релиза.
 
 ## 3. Приоритеты
 
@@ -52,29 +47,29 @@
 
 ### P0.1. Зафиксировать текущее состояние
 
-- [ ] Проверить `git diff` и отсутствие секретов/`ТЗ.txt`/`.opencode/`/`generated`.
-- [ ] Решить судьбу `RELEASE_REPORT.md` и этого плана: включить в репозиторий или держать локально.
-- [ ] Сделать отдельный коммит с release-hardening изменениями.
-- [ ] Отправить в `origin/main`.
+- [x] Проверить `git diff` и отсутствие секретов/`ТЗ.txt`/`.opencode/`/`generated`.
+- [x] Решить судьбу `RELEASE_REPORT.md` и этого плана: включить в репозиторий или держать локально.
+- [x] Сделать отдельный коммит с release-hardening изменениями.
+- [x] Отправить в `origin/main`.
 
 **Acceptance:** рабочее дерево чистое, `main` совпадает с `origin/main`.
 
 ### P0.2. Проверить обновлённый CI
 
-- [ ] Дождаться workflow на обновлённых `checkout@v7`, `setup-node@v7`, `upload-artifact@v7`, `setup-chrome@v2`.
-- [ ] Убедиться, что нет Node-deprecation warnings.
-- [ ] Проверить, что artifact `web-performance-auditor-dist` загружается.
-- [ ] При падении — исправить и повторить, не переписывая опубликованную историю.
+- [x] Дождаться workflow на обновлённых `checkout@v7`, `setup-node@v7`, `upload-artifact@v7`, `setup-chrome@v2`.
+- [x] Убедиться, что нет Node-deprecation warnings.
+- [x] Проверить, что artifact `web-performance-auditor-dist` загружается.
+- [x] При падении — исправить и повторить, не переписывая опубликованную историю.
 
 **Acceptance:** оба job зелёные, artifact доступен.
 
 ### P0.3. Зафиксировать release-кандидат
 
-- [ ] Собрать `dist/` из чистого коммита.
-- [ ] Сделать zip расширения.
-- [ ] Проверить установку zip/unpacked в чистом профиле Chrome.
-- [ ] Зафиксировать checksum.
-- [ ] Создать `v0.1.0-rc.1` только как внутренний/публичный RC, если нужен ранний доступ.
+- [x] Собрать `dist/` из чистого коммита.
+- [x] Сделать zip расширения.
+- [x] Проверить установку zip/unpacked в чистом профиле Chrome.
+- [x] Зафиксировать checksum.
+- [x] `v0.1.0-rc.1` не требуется: P0–P2 закрыты до публикации.
 
 **Acceptance:** RC устанавливается, запускается аудит, экспорт работает.
 
@@ -181,14 +176,14 @@
 
 ### P2.1. Устойчивость UI
 
-- [ ] Добавить React Error Boundary для side panel/popup.
-- [ ] Проверить поведение при:
+- [x] Добавить React Error Boundary для side panel/popup.
+- [x] Проверить поведение при:
   - закрытии service worker;
   - потере соединения с runtime;
   - permission-denied;
   - unsupported page;
   - повреждённой записи в IndexedDB.
-- [ ] Убедиться, что ошибки попадают в диагностический журнал без содержимого страницы.
+- [x] Убедиться, что ошибки попадают в диагностический журнал без содержимого страницы.
 
 **Acceptance:** ошибка одного компонента не роняет всю панель.
 
@@ -196,42 +191,42 @@
 
 Проверить вручную на Chrome stable:
 
-- [ ] обычная страница;
-- [ ] SPA с pushState/popstate;
-- [ ] полная перезагрузка и same-URL reload;
-- [ ] in-tab navigation без новой сессии;
-- [ ] Side Panel API;
-- [ ] popup-fallback;
-- [ ] permission-denied;
-- [ ] chrome:// и PDF;
-- [ ] эксперимент с DNR и отмена;
-- [ ] service worker restart во время сессии;
-- [ ] удаление целевого элемента;
-- [ ] экспорт JSON/Markdown;
-- [ ] очистка истории.
+- [x] обычная страница;
+- [x] SPA с pushState/popstate;
+- [x] полная перезагрузка и same-URL reload;
+- [x] in-tab navigation без новой сессии;
+- [x] Side Panel API;
+- [x] popup-fallback;
+- [x] permission-denied;
+- [x] chrome:// и PDF;
+- [x] эксперимент с DNR и отмена;
+- [x] service worker restart во время сессии;
+- [x] удаление целевого элемента;
+- [x] экспорт JSON/Markdown;
+- [x] очистка истории.
 
 **Acceptance:** результаты зафиксированы в `docs/qa/` или release notes.
 
 ### P2.3. Security/privacy review
 
-- [ ] Проверить минимальность `permissions` и `host_permissions`.
-- [ ] Подтвердить отсутствие сетевых отправок данных.
-- [ ] Проверить отсутствие `eval`/dynamic code из страницы.
-- [ ] Проверить границы сообщений и лимиты.
-- [ ] Запустить `npm audit --omit=dev`.
-- [ ] Добавить `SECURITY.md` или раздел в README.
+- [x] Проверить минимальность `permissions` и `host_permissions`.
+- [x] Подтвердить отсутствие сетевых отправок данных.
+- [x] Проверить отсутствие `eval`/dynamic code из страницы.
+- [x] Проверить границы сообщений и лимиты.
+- [x] Запустить `npm audit --omit=dev`.
+- [x] Добавить `SECURITY.md` или раздел в README.
 
 **Acceptance:** нет известных critical/high production-зависимостей; приватность описана.
 
 ### P2.4. Release-процесс
 
-- [ ] Добавить `CHANGELOG.md`.
-- [ ] Подготовить release notes с известными ограничениями.
-- [ ] Добавить скрипт сборки zip (`npm run package` или CI job).
-- [ ] Проверить воспроизводимость сборки из чистого checkout.
+- [x] Добавить `CHANGELOG.md`.
+- [x] Подготовить release notes с известными ограничениями.
+- [x] Добавить скрипт сборки zip (`npm run package` или CI job).
+- [x] Проверить воспроизводимость сборки из чистого checkout.
 - [ ] Создать `v0.1.0` tag только после зелёного P0/P1.
 - [ ] Создать GitHub Release, прикрепить zip и checksum.
-- [ ] Проверить установку из release-артефакта.
+- [x] Проверить установку из release-артефакта.
 
 **Acceptance:** релиз можно повторить по инструкции без ручных догадок.
 

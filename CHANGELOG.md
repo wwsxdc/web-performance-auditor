@@ -28,7 +28,7 @@ Vitals.
 - Пакетная запись диагностических событий: одна транзакция IndexedDB на пакет,
   принудительный flush на stop/navigation/reset/лимит/ошибку.
 - Accessibility-гейт (`npm run test:a11y`): axe-core по 10 состояниям,
-  keyboard-проверки, 0 serious/critical.
+  keyboard-проверки по всем вкладкам (15 проверок), 0 serious/critical.
 - Performance-бенчмарк (`npm run bench:collector`) и decision record по
   накладным расходам.
 - Воспроизводимый release-артефакт (`npm run package`) с SHA-256 и проверкой
@@ -53,6 +53,8 @@ Vitals.
 - Проверка отправителя и полномочий для остановки сессии, подсветки и
   экспериментов.
 - Focus-visible, контраст, landmarks и accessible names в Side Panel/popup.
+- Вкладки Side Panel получили полный ARIA-паттерн: roving `tabindex`,
+  `aria-controls`/`tabpanel` и переключение стрелками, `Home`/`End`.
 
 ### Безопасность
 

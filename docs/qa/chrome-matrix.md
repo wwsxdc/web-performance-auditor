@@ -10,7 +10,7 @@
 | Автоматические прогоны | Chrome for Testing 155.0.8059.79 (headless) |
 | Сборка | `dist/` из `main`, `v0.1.0` |
 | E2E | `HEADLESS=1 npm run test:e2e` — 41/41 PASS |
-| Accessibility | `HEADLESS=1 npm run a11y` — 12/12 PASS |
+| Accessibility | `HEADLESS=1 npm run a11y` — 15/15 PASS |
 | Release | `npm run package` + `npm run verify:release` — PASS |
 
 Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 137 брендовая
@@ -60,6 +60,6 @@ release-артефакта проверяется `verify:release`: zip расп
   отозвать обязательный host-permission во время теста. Ветка покрыта
   чтением кода и `ErrorView`.
 - Нет ручного screen-reader прогона (NVDA/VoiceOver); labels проверены
-  axe-core, keyboard-сценарий автоматизирован.
+  axe-core, keyboard-сценарий (фокус по всем вкладкам + стрелки) автоматизирован.
 - PDF-просмотрщик проверен как недоступный URL (`chrome-extension://...`);
   поведение встроенного PDF-viewer зависит от версии Chrome.

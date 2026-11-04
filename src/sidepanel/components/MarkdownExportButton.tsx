@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateId } from '../../utils/id';
 import { sendRuntimeMessage } from '../api';
 
@@ -11,16 +11,27 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMarkdown(null);
     setCopied(false);
+    setError(null);
   }, [experimentId, sessionId]);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const fetchMarkdown = useCallback(async () => {
     setBusy(true);
+    setError(null);
     try {
-      const response = await sendRuntimeMessage<{ markdown?: string }>({
+      const response = await sendRuntimeMessage<{ markdown?: string; error?: string }>({
         type: 'EXPORT_MARKDOWN',
         requestId: generateId(),
         sessionId,
@@ -30,8 +41,10 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
         setMarkdown(response.markdown);
         return response.markdown;
       }
+      setError(response?.error ?? 'Не удалось сформировать Markdown-отчёт');
     } catch (error) {
       console.error('[WPA UI] Markdown export failed:', error);
+      setError('Не удалось сформировать Markdown-отчёт');
     } finally {
       setBusy(false);
     }
@@ -49,7 +62,9 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
+    // Some Chrome builds abort a download if the blob URL is revoked in the
+    // same task as the synthetic click.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [fetchMarkdown, markdown]);
 
   const handlePreview = useCallback(async () => {
@@ -62,9 +77,12 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setError(null);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       console.error('[WPA UI] Clipboard write failed:', error);
+      setError('Не удалось скопировать отчёт в буфер обмена');
     }
   }, [fetchMarkdown, markdown]);
 
@@ -81,11 +99,17 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
         <button
           onClick={handlePreview}
           disabled={busy}
-          className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50"
+          className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           Предпросмотр
         </button>
       </div>
+
+      {error && (
+        <p role="alert" className="mt-2 text-[11px] text-red-700">
+          {error}
+        </p>
+      )}
 
       {markdown && (
         <div className="mt-2">
@@ -97,7 +121,7 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
               onClick={handleCopy}
               className="text-[11px] text-blue-600 hover:underline"
             >
-              {copied ? 'Скопировано' : 'Копировать'}
+              <span aria-live="polite">{copied ? 'Скопировано' : 'Копировать'}</span>
             </button>
           </div>
           <pre className="mt-1 max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 text-[10px] whitespace-pre-wrap text-gray-700">

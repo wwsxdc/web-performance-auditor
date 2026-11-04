@@ -17,7 +17,10 @@ const FIXED_MTIME = new Date('2020-01-01T00:00:00.000Z');
 
 async function collect(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true });
-  entries.sort((left, right) => left.name.localeCompare(right.name));
+  // Code-point order keeps the archive independent of ICU/locale collation.
+  entries.sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  );
 
   const files = {};
   for (const entry of entries) {

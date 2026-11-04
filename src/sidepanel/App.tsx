@@ -1,4 +1,5 @@
 ﻿import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Header } from './components/Header';
 import { MetricsGrid } from './components/MetricsGrid';
 import { ErrorView } from './components/ErrorView';
@@ -53,6 +54,28 @@ export default function App() {
     isLoading,
   } = useSession();
   const [view, setView] = useState<View>('overview');
+  const tabRefs = useRef<Partial<Record<View, HTMLButtonElement | null>>>({});
+
+  // WAI-ARIA tabs: the tab list is a single stop, arrows move selection.
+  const focusTab = useCallback((value: View) => {
+    setView(value);
+    tabRefs.current[value]?.focus();
+  }, []);
+
+  const handleTabKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>, value: View) => {
+      const index = TABS.findIndex((tab) => tab.value === value);
+      let next: View | undefined;
+      if (event.key === 'ArrowRight') next = TABS[(index + 1) % TABS.length].value;
+      else if (event.key === 'ArrowLeft') next = TABS[(index - 1 + TABS.length) % TABS.length].value;
+      else if (event.key === 'Home') next = TABS[0].value;
+      else if (event.key === 'End') next = TABS[TABS.length - 1].value;
+      if (!next) return;
+      event.preventDefault();
+      focusTab(next);
+    },
+    [focusTab],
+  );
   const [selectedName, setSelectedName] = useState<MetricName | null>(null);
   const [overlayEnabled, setOverlayEnabled] = useState<Record<OverlayCategory, boolean>>({
     LCP: true,
@@ -373,9 +396,16 @@ export default function App() {
             key={tab.value}
             type="button"
             role="tab"
+            id={`wpa-tab-${tab.value}`}
             aria-selected={view === tab.value}
+            aria-controls="wpa-tabpanel"
+            tabIndex={view === tab.value ? 0 : -1}
+            ref={(element) => {
+              tabRefs.current[tab.value] = element;
+            }}
             onClick={() => setView(tab.value)}
-            className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium ${
+            onKeyDown={(event) => handleTabKeyDown(event, tab.value)}
+            className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
               view === tab.value
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-600 hover:bg-gray-100'
@@ -386,6 +416,11 @@ export default function App() {
         ))}
       </nav>
 
+      <div
+        role="tabpanel"
+        id="wpa-tabpanel"
+        aria-labelledby={`wpa-tab-${view}`}
+      >
       {collectorStatus === 'error' && state?.error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700" role="alert">
           {state.error}
@@ -495,6 +530,7 @@ export default function App() {
           <DataCleanup onCleared={handleCleared} />
         </div>
       )}
+      </div>
     </main>
   );
 }

@@ -1,11 +1,5 @@
 import { generateId } from '../utils/id';
-
-export interface DiagnosticLogEntry {
-  id: string;
-  timestamp: number;
-  scope: string;
-  message: string;
-}
+import type { DiagnosticLogEntry } from '../types/diagnostics';
 
 const KEY = 'wpa_diagnostics';
 const MAX_ENTRIES = 30;

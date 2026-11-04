@@ -38,7 +38,8 @@ export function ExportButton({ sessionId }: ExportButtonProps) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        // Give Chrome a task to start the download before releasing the blob.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
         setError('Сервис-воркер не вернул отчёт');
       }

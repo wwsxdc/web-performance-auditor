@@ -68,10 +68,18 @@ function recordCheck(name, pass, details) {
   console.log(`${pass ? 'PASS' : 'FAIL'} ${name} — ${details}`);
 }
 
-async function keyboardWalk(page) {
+async function keyboardWalk(page, name) {
   await page.evaluate(() => document.activeElement?.blur());
+  const expected = await page.evaluate(() => {
+    const selector =
+      'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
+    return [...document.querySelectorAll(selector)].filter(
+      (element) => element.getClientRects().length > 0,
+    ).length;
+  });
+  const limit = Math.min(Math.max(expected + 2, 4), 24);
   const trail = [];
-  for (let index = 0; index < 12; index++) {
+  for (let index = 0; index < limit; index++) {
     await page.keyboard.press('Tab');
     trail.push(
       await page.evaluate(() => {
@@ -93,11 +101,13 @@ async function keyboardWalk(page) {
   }
 
   const focused = trail.filter((entry) => entry.label !== 'BODY');
-  const ok = focused.length >= 6 && focused.every((entry) => entry.visible && entry.focusRing);
+  const ringed = focused.filter((entry) => entry.visible && entry.focusRing);
+  const reached = Math.min(expected, 24);
+  const ok = reached === 0 ? focused.length === 0 : focused.length >= reached && ringed.length === focused.length;
   recordCheck(
-    'keyboard: focus-visible по Tab',
+    `keyboard: ${name}`,
     ok,
-    `элементов=${focused.length}, с кольцом=${focused.filter((entry) => entry.focusRing).length}`,
+    `фокусируемых=${expected}, пройдено=${focused.length}, с кольцом=${ringed.length}`,
   );
 }
 
@@ -189,27 +199,33 @@ async function main() {
       await audit(panel, `side panel: сессия «${label}»`);
     }
 
-    // Keyboard-only path: Tab must reach visible controls with a focus ring and
-    // the tab list must switch views with Enter.
+    // Keyboard-only path: Tab must reach every visible control in each view with
+    // a focus ring, and the tab list must switch views with Enter.
+    for (const label of ['Обзор', 'События', 'Эксперименты', 'Данные']) {
+      await clickTab(panel, label);
+      await panel.bringToFront();
+      await keyboardWalk(panel, `фокус во вкладке «${label}»`);
+    }
     await clickTab(panel, 'Обзор');
     await panel.bringToFront();
-    await keyboardWalk(panel);
-    let switched = false;
-    for (let index = 0; index < 20 && !switched; index++) {
-      await panel.keyboard.press('Tab');
-      const label = await panel.evaluate(() =>
-        document.activeElement?.textContent?.trim(),
-      );
-      if (label === 'События') {
-        await panel.keyboard.press('Enter');
-        switched = true;
-      }
-    }
+    await panel.evaluate(() => {
+      document.querySelector('[role="tab"][aria-selected="true"]')?.focus();
+    });
+    await panel.keyboard.press('ArrowRight');
     await sleep(200);
-    const selectedTab = await panel.evaluate(
+    const afterRight = await panel.evaluate(
       () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim(),
     );
-    recordCheck('keyboard: переключение вкладки Enter', selectedTab === 'События', `выбрано=${selectedTab}`);
+    await panel.keyboard.press('ArrowLeft');
+    await sleep(200);
+    const afterLeft = await panel.evaluate(
+      () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim(),
+    );
+    recordCheck(
+      'keyboard: стрелки переключают вкладки',
+      afterRight === 'События' && afterLeft === 'Обзор',
+      `→${afterRight}, ←${afterLeft}`,
+    );
 
     await send('SESSION_STOP', {
       sessionId: (await send('GET_STATE'))?.state?.session?.id,

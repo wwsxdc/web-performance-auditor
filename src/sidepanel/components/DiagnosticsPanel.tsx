@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DiagnosticLogEntry } from '../../background/diagnostics';
+import type { DiagnosticLogEntry } from '../../types/diagnostics';
 import { generateId } from '../../utils/id';
 import { formatTimestamp } from '../../utils/time';
 import { sendRuntimeMessage } from '../api';

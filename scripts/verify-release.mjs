@@ -15,12 +15,31 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDir = path.join(root, 'release');
 const headless = process.env.HEADLESS !== '0';
 
-const archives = (await readdir(releaseDir)).filter((name) => name.endsWith('.zip'));
-if (archives.length === 0) {
+let archiveNames = [];
+try {
+  archiveNames = (await readdir(releaseDir)).filter((name) => name.endsWith('.zip'));
+} catch {
+  archiveNames = [];
+}
+if (archiveNames.length === 0) {
   throw new Error('В release/ нет zip. Сначала выполните npm run package.');
 }
-archives.sort();
-const archiveName = archives.at(-1);
+
+function versionParts(name) {
+  const match = name.match(/-(\d+)\.(\d+)\.(\d+)\.zip$/);
+  return match ? match.slice(1).map(Number) : [0, 0, 0];
+}
+
+// Sort by semver, not lexically: 1.10.0 must win over 1.9.0.
+archiveNames.sort((left, right) => {
+  const a = versionParts(left);
+  const b = versionParts(right);
+  for (let index = 0; index < 3; index++) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return left < right ? -1 : left > right ? 1 : 0;
+});
+const archiveName = archiveNames.at(-1);
 const archivePath = path.join(releaseDir, archiveName);
 
 const unpacked = mkdtempSync(path.join(tmpdir(), 'wpa-release-'));

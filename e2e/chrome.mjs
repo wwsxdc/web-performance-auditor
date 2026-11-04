@@ -30,6 +30,13 @@ export function findChrome() {
       'Chrome не найден. Укажите WPA_CHROME_PATH или установите Chrome for Testing.',
     );
   }
+  if (!testingCandidates.includes(found) && found !== process.env.WPA_CHROME_PATH) {
+    console.warn(
+      `[WPA] Chrome for Testing не найден, используется ${found}. ` +
+        'Брендовый Chrome 137+ игнорирует --load-extension: если тест упадёт ' +
+        'с таймаутом service worker, установите Chrome for Testing.',
+    );
+  }
   return found;
 }
 
