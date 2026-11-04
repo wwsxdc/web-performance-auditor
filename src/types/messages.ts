@@ -126,6 +126,7 @@ export type ExtensionMessage =
   | { type: 'UPDATE_SETTINGS'; requestId: string; retentionDays: number }
   | { type: 'GET_DIAGNOSTICS'; requestId: string }
   | { type: 'CLEAR_DIAGNOSTICS'; requestId: string }
+  | { type: 'LOG_DIAGNOSTIC'; requestId: string; scope: string; message: string }
   | { type: 'TAB_STATUS'; requestId: string; tabId: number; accessible: boolean; reason?: string };
 
 export type CollectorStatus = 'idle' | 'initializing' | 'collecting' | 'unsupported' | 'permission-denied' | 'error';

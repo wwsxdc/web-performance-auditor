@@ -382,6 +382,20 @@ describe('SessionManager', () => {
     expect(restored.isActiveForTab(1)).toBe(true);
   });
 
+  it('keeps the app state usable when a stored session cannot be read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const manager = new SessionManager();
+    await manager.startSession(1, 'https://example.com/');
+    const read = vi.spyOn(storage, 'getSession').mockRejectedValueOnce(new Error('damaged db'));
+
+    const state = await manager.getState();
+
+    expect(state.session).toBeNull();
+    expect(state.error).toContain('Не удалось прочитать');
+    read.mockRestore();
+    warn.mockRestore();
+  });
+
   it('clears a pointer to a session that no longer exists', async () => {
     localStore.set('activeSession', {
       id: 'deleted-session',

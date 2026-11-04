@@ -35,6 +35,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Release artifacts
+release/
+
 # OS files
 .DS_Store
 Thumbs.db

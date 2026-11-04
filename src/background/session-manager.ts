@@ -528,7 +528,15 @@ export class SessionManager {
     let session: AuditSession | null = null;
     const visibleSessionId = this.currentSessionId ?? this.lastSessionId;
     if (visibleSessionId) {
-      session = (await storage.getSession(visibleSessionId)) ?? null;
+      try {
+        session = (await storage.getSession(visibleSessionId)) ?? null;
+      } catch (error) {
+        // A damaged IndexedDB must not blank the panel: report it and keep the
+        // rest of the state usable.
+        console.warn('[WPA] Failed to read session state:', error);
+        this.error = 'Не удалось прочитать сохранённые данные аудита';
+        session = null;
+      }
       // Surface buffered events immediately instead of waiting for a flush.
       if (
         session &&

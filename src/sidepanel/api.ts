@@ -1,7 +1,26 @@
 import type { ExtensionMessage } from '../types/messages';
+import { generateId } from '../utils/id';
 
 export function sendRuntimeMessage<T>(message: ExtensionMessage): Promise<T> {
   return chrome.runtime.sendMessage(message) as Promise<T>;
+}
+
+/**
+ * Records a UI failure in the diagnostic journal (P2.1). Only the error
+ * message and component stack are sent — never page content or URLs.
+ */
+export async function logUiError(scope: string, error: unknown): Promise<void> {
+  const raw = error instanceof Error ? error.message : String(error);
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'LOG_DIAGNOSTIC',
+      requestId: generateId(),
+      scope,
+      message: raw.slice(0, 500),
+    });
+  } catch {
+    // The journal must never break the interface it reports on.
+  }
 }
 
 export async function getActiveTab(currentWindow = false): Promise<chrome.tabs.Tab | undefined> {

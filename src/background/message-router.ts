@@ -276,6 +276,12 @@ export function handleMessage(
           break;
         }
 
+        case 'LOG_DIAGNOSTIC': {
+          await logDiagnostic(message.scope.slice(0, 40), message.message);
+          sendResponse({ success: true });
+          break;
+        }
+
         case 'UPDATE_SETTINGS': {
           const settings = await updateRetentionDays(message.retentionDays);
           let deleted = 0;

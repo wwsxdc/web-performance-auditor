@@ -76,14 +76,20 @@ npm run a11y       # axe-core + keyboard-гейт по собранному dist
 npm run test:a11y  # build + a11y
 npm run bench      # benchmark накладных расходов коллектора
 npm run bench:collector  # build + benchmark
+npm run package    # build + воспроизводимый zip + SHA-256 в release/
+npm run verify:release   # распаковать zip и загрузить расширение в Chrome
 ```
+
+Release-артефакт собирается из `dist/` с фиксированным mtime, поэтому повторная
+сборка даёт тот же SHA-256.
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify`, E2E и
-accessibility-гейт на Ubuntu при push, pull request и ручном запуске. Собранное
-расширение из job `verify` публикуется как artifact
-`web-performance-auditor-dist` (хранится 7 дней).
+GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify`, E2E,
+accessibility-гейт и release-проверку на Ubuntu при push, pull request и ручном
+запуске. Собранное расширение публикуется как artifact
+`web-performance-auditor-dist`, а zip с SHA-256 — как
+`web-performance-auditor-release`.
 
 Исходники инжектируемых скриптов лежат в `src/content/`. Файлы в
 `public/generated/` и `dist/` собираются автоматически (`wpa-injected-scripts`
@@ -92,7 +98,7 @@ accessibility-гейт на Ubuntu при push, pull request и ручном з�
 ### E2E
 
 `e2e/e2e.mjs` запускает Chrome с распакованным `dist/`, поднимает локальный
-fixture-сервер и проверяет 40 сценариев: сбор всех пяти метрик, отсутствие
+fixture-сервер и проверяет 41 сценарий: сбор всех пяти метрик, отсутствие
 фиктивного INP до взаимодействия, attribution, Long Tasks, детали метрики,
 мультиоверлеи, устаревшие/заменённые/перемещённые DOM-цели, авторизацию
 сообщений, документные и SPA-навигации, DNR эксперимента, очистку правил,
@@ -268,6 +274,11 @@ HEADLESS=1 npm run test:a11y
 - Записи с несовместимой `schemaVersion` не читаются и удаляются при
   retention-очистке; политика версий и миграций описана в
   [`docs/storage.md`](docs/storage.md).
+- Модель безопасности, отсутствие сетевых отправок и остаточные риски —
+  [`SECURITY.md`](SECURITY.md) и
+  [`docs/security/privacy-review.md`](docs/security/privacy-review.md).
+- Результаты QA-матрицы Chrome — [`docs/qa/chrome-matrix.md`](docs/qa/chrome-matrix.md);
+  история изменений — [`CHANGELOG.md`](CHANGELOG.md).
 - Сообщения из MAIN-world ограничены по размеру (`PAGE_MESSAGE_LIMITS`:
   64 КБ на сообщение, 512 символов на строковое поле) и принимаются только
   из того же окна и origin.

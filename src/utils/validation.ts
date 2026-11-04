@@ -310,6 +310,9 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       case 'CLEAR_DIAGNOSTICS':
         return isString(value.requestId);
 
+      case 'LOG_DIAGNOSTIC':
+        return isString(value.requestId) && isString(value.scope) && isString(value.message);
+
       case 'TAB_STATUS':
       return (
         isString(value.requestId) &&

@@ -55,3 +55,29 @@ jobs:
         env:
           HEADLESS: '1'
           WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+      - run: npm ci --no-audit --no-fund
+      - run: npm run package
+      - run: npm run verify:release
+        env:
+          HEADLESS: '1'
+          WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - name: Upload release archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-performance-auditor-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 14

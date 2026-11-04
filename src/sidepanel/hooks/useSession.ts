@@ -53,12 +53,12 @@ export function useSession() {
   }, []);
 
   useEffect(() => {
-    sendRuntimeMessage<{ state?: AppState }>({
+    sendRuntimeMessage<{ state?: AppState; error?: string }>({
       type: 'GET_STATE',
       requestId: generateId(),
     })
       .then((response) => {
-        setState(response?.state ?? EMPTY_STATE);
+        setState(response?.state ?? { ...EMPTY_STATE, error: response?.error });
         setIsLoading(false);
       })
       .catch(() => {

@@ -445,6 +445,19 @@ async function main() {
       `events=${afterSpa.session.events.length}`,
     );
 
+    // popstate is reported through the same history-state listener.
+    const beforePop = afterSpa.session.navigations.length;
+    await target.evaluate(() => history.back());
+    const afterPop = await waitFor(
+      (candidate) => (candidate?.session?.navigations?.length ?? 0) > beforePop,
+      'popstate navigation segment',
+    );
+    check(
+      'SPA_POPSTATE',
+      afterPop.session.navigations.at(-1)?.kind === 'spa',
+      `segments=${afterPop.session.navigations.length}`,
+    );
+
     const baselineSessionId = afterSpa.session.id;
     // Bring the audited tab to front BEFORE the experimental reload: LCP/CLS
     // are not produced for a document that paints while hidden.
