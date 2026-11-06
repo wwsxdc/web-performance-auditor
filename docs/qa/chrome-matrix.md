@@ -19,7 +19,7 @@ Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 
 release-артефакта проверяется `verify:release`: zip распаковывается, грузится
 как unpacked-расширение, side panel рендерится. Ручная установка zip в
 стабильном Chrome через `chrome://extensions` остаётся шагом релиз-процесса
-(см. `RELEASE_REPORT.md`).
+(см. `docs/releases/v0.1.0.md`).
 
 ## Функциональная матрица
 

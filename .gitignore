@@ -45,3 +45,7 @@ desktop.ini
 
 # Product requirements (not published)
 /ТЗ.txt
+
+# Internal planning and release reports (kept locally)
+/PRODUCTION_READINESS_PLAN.md
+/RELEASE_REPORT.md
