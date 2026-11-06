@@ -12,8 +12,10 @@ import { zipSync } from 'fflate';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const releaseDir = path.join(root, 'release');
-// A fixed timestamp keeps the zip checksum stable across machines.
-const FIXED_MTIME = new Date('2020-01-01T00:00:00.000Z');
+// A fixed timestamp keeps the zip checksum stable across machines. fflate
+// writes DOS timestamps with local-time getters, so build the date from local
+// components; a UTC-based Date would encode a different hour per timezone.
+const FIXED_MTIME = new Date(2020, 0, 1, 0, 0, 0);
 
 async function collect(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true });
