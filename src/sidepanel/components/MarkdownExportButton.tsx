@@ -87,32 +87,30 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
   }, [fetchMarkdown, markdown]);
 
   return (
-    <div className="mt-2">
-      <div className="flex gap-2">
-        <button
-          onClick={handleDownload}
-          disabled={busy}
-          className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          {busy ? 'Экспорт...' : 'Экспорт Markdown'}
-        </button>
-        <button
-          onClick={handlePreview}
-          disabled={busy}
-          className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          Предпросмотр
-        </button>
-      </div>
+    <>
+      <button
+        onClick={handleDownload}
+        disabled={busy}
+        className="px-3 py-1.5 text-xs bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      >
+        {busy ? 'Экспорт...' : 'Экспорт Markdown'}
+      </button>
+      <button
+        onClick={handlePreview}
+        disabled={busy}
+        className="px-3 py-1.5 text-xs bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      >
+        Предпросмотр
+      </button>
 
       {error && (
-        <p role="alert" className="mt-2 text-[11px] text-red-700">
+        <p role="alert" className="mt-2 basis-full text-[11px] text-red-700">
           {error}
         </p>
       )}
 
       {markdown && (
-        <div className="mt-2">
+        <div className="mt-2 basis-full">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               Предпросмотр Markdown
@@ -129,6 +127,6 @@ export function MarkdownExportButton({ sessionId, experimentId }: MarkdownExport
           </pre>
         </div>
       )}
-    </div>
+    </>
   );
 }

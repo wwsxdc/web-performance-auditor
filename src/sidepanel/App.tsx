@@ -513,7 +513,7 @@ export default function App() {
       {showData && session && (
         <div className="space-y-3">
           <SessionInfo session={session} />
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap items-start justify-end gap-2">
             <ExportButton sessionId={session.id} />
             <MarkdownExportButton
               sessionId={session.id}
