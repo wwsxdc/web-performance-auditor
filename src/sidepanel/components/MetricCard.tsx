@@ -89,7 +89,7 @@ export function MetricCard({
           </div>
         ) : displayValue ? (
           <div>
-            <p className={`text-2xl font-mono font-bold ${style.text}`} aria-live="polite">
+            <p className={`text-xl font-mono font-bold whitespace-nowrap ${style.text}`} aria-live="polite">
               {displayValue}
             </p>
             {style.label && (

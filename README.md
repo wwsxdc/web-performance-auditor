@@ -195,7 +195,7 @@ HEADLESS=1 npm run test:a11y
   "reportVersion": 1,
   "schemaVersion": 2,
   "generatedAt": "2026-10-20T06:30:00.000Z",
-  "tool": { "name": "Web Performance Auditor", "version": "0.1.0" },
+  "tool": { "name": "Web Performance Auditor", "version": "0.1.1" },
   "session": {
     "id": "102e9441-…",
     "tabId": 42,

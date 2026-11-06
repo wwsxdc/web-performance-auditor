@@ -1,6 +1,6 @@
 # QA-матрица Chrome (P2.2)
 
-Дата: 2026-11-04
+Дата: 2026-11-06
 
 ## Окружение
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | ОС | Windows 11 |
 | Автоматические прогоны | Chrome for Testing 155.0.8059.79 (headless) |
-| Сборка | `dist/` из `main`, `v0.1.0` |
+| Сборка | `dist/` из `main`, `v0.1.1` |
 | E2E | `HEADLESS=1 npm run test:e2e` — 41/41 PASS |
 | Accessibility | `HEADLESS=1 npm run a11y` — 15/15 PASS |
 | Release | `npm run package` + `npm run verify:release` — PASS |
@@ -19,7 +19,7 @@ Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 
 release-артефакта проверяется `verify:release`: zip распаковывается, грузится
 как unpacked-расширение, side panel рендерится. Ручная установка zip в
 стабильном Chrome через `chrome://extensions` остаётся шагом релиз-процесса
-(см. `docs/releases/v0.1.0.md`).
+(см. `docs/releases/v0.1.1.md`).
 
 ## Функциональная матрица
 

@@ -513,12 +513,15 @@ export default function App() {
       {showData && session && (
         <div className="space-y-3">
           <SessionInfo session={session} />
-          <div className="flex flex-wrap items-start justify-end gap-2">
-            <ExportButton sessionId={session.id} />
-            <MarkdownExportButton
-              sessionId={session.id}
-              experimentId={activeExperiment?.id}
-            />
+          <div className="rounded-xl border border-gray-200 bg-white p-3">
+            <h2 className="text-sm font-semibold text-gray-800">Экспорт</h2>
+            <div className="mt-2 flex flex-wrap items-start gap-2">
+              <ExportButton sessionId={session.id} />
+              <MarkdownExportButton
+                sessionId={session.id}
+                experimentId={activeExperiment?.id}
+              />
+            </div>
           </div>
         </div>
       )}

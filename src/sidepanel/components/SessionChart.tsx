@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import type { AuditSession } from '../../types/session';
 import { buildSessionChartData, hasChartData, type SessionChartPoint } from '../../utils/chart';
+import { pluralizeRu } from '../../utils/plural';
 import { formatMetricValue, formatTimestamp } from '../../utils/time';
 
 interface SessionChartProps {
@@ -222,7 +223,7 @@ export function SessionChart({ session }: SessionChartProps) {
 
       <details className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
         <summary className="cursor-pointer text-[11px] font-medium text-gray-600">
-          Данные графика ({points.length} точек)
+          Данные графика ({points.length} {pluralizeRu(points.length, ['точка', 'точки', 'точек'])})
         </summary>
         <div className="mt-2 max-h-56 overflow-auto">
           <table className="w-full border-collapse text-[10px]">

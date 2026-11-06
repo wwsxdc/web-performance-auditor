@@ -65,7 +65,8 @@ export function SessionInfo({ session }: SessionInfoProps) {
       <div className="flex justify-between mt-1">
         <span>Браузер:</span>
         <span className="font-medium text-gray-800">
-          {session.browser.name} {session.browser.version ?? ''}
+          {session.browser.name}
+          {session.browser.version ? ` ${session.browser.version}` : ''}
         </span>
       </div>
     </div>

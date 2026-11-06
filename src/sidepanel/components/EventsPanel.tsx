@@ -26,24 +26,55 @@ const TYPE_LABELS: Record<DiagnosticEventType, string> = {
 };
 
 const DETAIL_LABELS: Record<string, string> = {
-  name: 'Метрика',
+  name: 'Имя',
+  metric: 'Метрика',
+  metricId: 'ID метрики',
   value: 'Значение',
+  delta: 'Изменение',
+  rating: 'Оценка',
   shift: 'Сдвиг',
   containerName: 'Контейнер',
+  containerType: 'Тип контейнера',
+  containerSrc: 'Источник контейнера',
+  containerId: 'ID контейнера',
   selector: 'Селектор',
+  tagName: 'Тег',
   interactionType: 'Тип',
   from: 'Откуда',
   to: 'Куда',
   source: 'Источник',
+  url: 'Адрес',
   experimentId: 'Эксперимент',
   collector: 'Наблюдатель',
   message: 'Описание',
+  hadRecentInput: 'Недавний ввод',
+  sourcesCount: 'Источников',
+  startTime: 'Старт, мс',
 };
 
-function detailEntries(event: DiagnosticEvent): [string, string][] {
+const RATING_VALUES: Record<string, string> = {
+  good: 'хорошо',
+  'needs-improvement': 'требует улучшения',
+  poor: 'плохо',
+  unrated: 'без оценки',
+};
+
+export function formatDetailValue(key: string, value: string | number | boolean): string {
+  if (key === 'rating' && typeof value === 'string') return RATING_VALUES[value] ?? value;
+  if (typeof value === 'boolean') return value ? 'да' : 'нет';
+  if (typeof value !== 'number' || !Number.isFinite(value)) return String(value);
+  if (key === 'startTime') return String(Math.round(value));
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+}
+
+export function detailEntries(event: DiagnosticEvent): [source: string, label: string, value: string][] {
   return Object.entries(event.details ?? {})
     .filter(([, value]) => value !== null && value !== '')
-    .map(([key, value]) => [DETAIL_LABELS[key] ?? key, String(value)]);
+    .map(([key, value]) => [
+      key,
+      DETAIL_LABELS[key] ?? key,
+      formatDetailValue(key, value as string | number | boolean),
+    ]);
 }
 
 interface EventsPanelProps {
@@ -93,7 +124,9 @@ export function EventsPanel({ events }: EventsPanelProps) {
         <h2 id="events-heading" className="text-sm font-semibold text-gray-800">
           События диагностики
         </h2>
-        <span className="text-[11px] text-gray-500">{events.length}</span>
+        <span className="text-[11px] text-gray-500" aria-label={`Событий: ${events.length}`}>
+          {events.length}
+        </span>
       </div>
       <p className="mt-1 text-[11px] text-gray-500">
         Long Tasks объединяются в серии, если идут подряд с паузой до 1 секунды.
@@ -106,7 +139,7 @@ export function EventsPanel({ events }: EventsPanelProps) {
             type="button"
             aria-pressed={filter === option.value}
             onClick={() => setFilter(option.value)}
-            className={`rounded-full border px-2 py-1 text-[10px] font-medium ${
+            className={`rounded-full border px-1.5 py-1.5 text-[10px] font-medium ${
               filter === option.value
                 ? 'border-blue-500 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -129,18 +162,18 @@ export function EventsPanel({ events }: EventsPanelProps) {
               return (
                 <li key={group.id} className="rounded-lg border border-amber-200 bg-amber-50/60 p-2.5">
                   <details>
-                    <summary className="cursor-pointer list-none">
-                      <div className="flex items-center justify-between gap-2">
+                    <summary className="cursor-pointer">
+                      <span className="flex items-center justify-between gap-2">
                         <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
                           Long Task ×{group.count}
                         </span>
                         <span className="font-mono text-xs font-semibold text-amber-900">
                           {formatDuration(group.totalDuration)}
                         </span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-amber-900/80">
+                      </span>
+                      <span className="mt-1 block text-[11px] text-amber-900/80">
                         {formatTimestamp(group.startedAt)}–{formatTimestamp(group.endedAt)} · {groupDetails(group)}
-                      </p>
+                      </span>
                     </summary>
                     <ul className="mt-2 space-y-1 border-t border-amber-200 pt-2">
                       {group.events.map((event) => (
@@ -175,8 +208,8 @@ export function EventsPanel({ events }: EventsPanelProps) {
                         Длительность: <span className="font-mono">{formatDuration(event.duration)}</span>
                       </p>
                     )}
-                    {details.map(([label, value]) => (
-                      <p key={label} className="truncate text-[10px] text-gray-500" title={value}>
+                    {details.map(([source, label, value]) => (
+                      <p key={source} className="truncate text-[10px] text-gray-500" title={value}>
                         {label}: {value}
                       </p>
                     ))}
