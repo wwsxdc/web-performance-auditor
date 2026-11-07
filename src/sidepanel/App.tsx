@@ -439,6 +439,12 @@ export default function App() {
             onQuickHighlight={handleQuickHighlight}
           />
 
+          {!session && collectorStatus === 'idle' && (
+            <p className="mt-3 rounded-lg border border-dashed border-gray-300 bg-white p-3 text-xs text-gray-500">
+              Нажмите «Аудит» вверху, чтобы начать измерение Core Web Vitals этой страницы.
+            </p>
+          )}
+
           {session && (
             <div className="bg-white rounded-lg p-3 shadow-sm mt-3">
               <CompletenessStatus session={session} compact />

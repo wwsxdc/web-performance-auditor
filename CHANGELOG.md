@@ -3,6 +3,17 @@
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [SemVer](https://semver.org/lang/ru/).
 
+## [0.1.2] — 2026-11-07
+
+### Исправлено
+
+- Пустой обзор подсказывает нажать «Аудит», чтобы начать измерение Core Web
+  Vitals на текущей странице.
+- Подписи оси времени на графике больше не дублируются на узкой панели: для
+  коротких сессий показывается десятая доля секунды.
+- Срок хранения принимает только целое число дней от 1 до 365; поле получило
+  шаг 1 и числовую клавиатуру.
+
 ## [0.1.1] — 2026-11-06
 
 ### Исправлено
@@ -98,5 +109,6 @@ Vitals.
   при явной ошибке API.
 - Permission-denied сценарий проверен кодом, но не автоматизирован.
 
+[0.1.2]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.2
 [0.1.1]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.1
 [0.1.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.0

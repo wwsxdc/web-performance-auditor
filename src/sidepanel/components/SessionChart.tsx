@@ -69,7 +69,9 @@ function ChartTooltip({ active, payload }: ChartTooltipProps) {
 }
 
 function formatElapsed(value: number): string {
-  return `${Math.round(value)} с`;
+  // Short sessions get one decimal so adjacent ticks do not collapse into the
+  // same rounded second on the narrow side panel.
+  return `${value.toFixed(value < 10 ? 1 : 0)} с`;
 }
 
 export function SessionChart({ session }: SessionChartProps) {

@@ -44,8 +44,8 @@ export function SettingsPanel() {
 
   const handleSave = async () => {
     const days = Number(retentionDays);
-    if (!Number.isFinite(days) || days < 1 || days > 365) {
-      setStatus('Укажите срок от 1 до 365 дней');
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      setStatus('Укажите целое число дней от 1 до 365');
       setStatusError(true);
       return;
     }
@@ -102,6 +102,8 @@ export function SettingsPanel() {
             type="number"
             min={1}
             max={365}
+            step={1}
+            inputMode="numeric"
             value={retentionDays}
             onChange={(event) => setRetentionDays(event.target.value)}
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-800"
