@@ -1,8 +1,9 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { AuditSession } from '../types/session';
+import type { AuditSession, ImportedReportSource, SessionSummary } from '../types/session';
 import type { MetricRecord } from '../types/metrics';
 import type { DiagnosticEvent } from '../types/events';
 import type { Experiment } from '../types/experiment';
+import type { ImportBundle } from '../utils/report-import';
 import { SCHEMA_VERSION, STORAGE_LIMITS } from '../constants/config';
 
 const DB_NAME = 'wpa-store';
@@ -66,6 +67,8 @@ function getDb(): Promise<IDBPDatabase> {
 export interface StoredSession {
   id: string;
   schemaVersion: number;
+  origin?: 'imported';
+  importedFrom?: ImportedReportSource;
   tabId: number;
   documentId?: string;
   url: string;
@@ -216,6 +219,119 @@ export async function getAllSessions(): Promise<StoredSession[]> {
   const db = await getDb();
   const sessions = await db.getAll('sessions') as StoredSession[];
   return sessions.filter(hasSupportedSchemaVersion);
+}
+
+export class ImportLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ImportLimitError';
+  }
+}
+
+export class DuplicateImportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DuplicateImportError';
+  }
+}
+
+/**
+ * History rows for the side panel. Counts are read per session so the list can
+ * show how much data each row holds without loading metrics/events themselves.
+ */
+export async function getSessionSummaries(limit = STORAGE_LIMITS.maxSessions): Promise<SessionSummary[]> {
+  const db = await getDb();
+  const sessions = (await db.getAll('sessions') as StoredSession[])
+    .filter(hasSupportedSchemaVersion)
+    .sort((left, right) => right.startedAt - left.startedAt)
+    .slice(0, Math.max(0, limit));
+  const experiments = ((await db.getAll('experiments')) as Experiment[]).filter(
+    hasSupportedSchemaVersion,
+  );
+  const experimentCounts = new Map<string, number>();
+  for (const experiment of experiments) {
+    for (const sessionId of [experiment.baselineSessionId, experiment.experimentSessionId]) {
+      if (typeof sessionId !== 'string') continue;
+      experimentCounts.set(sessionId, (experimentCounts.get(sessionId) ?? 0) + 1);
+    }
+  }
+
+  return Promise.all(
+    sessions.map(async (session): Promise<SessionSummary> => ({
+      id: session.id,
+      url: session.url,
+      startedAt: session.startedAt,
+      ...(typeof session.endedAt === 'number' && Number.isFinite(session.endedAt)
+        ? { endedAt: session.endedAt }
+        : {}),
+      status: session.status as AuditSession['status'],
+      metricCount: await db.countFromIndex('metrics', 'by-session', session.id),
+      eventCount: await db.countFromIndex('events', 'by-session', session.id),
+      experimentCount: experimentCounts.get(session.id) ?? 0,
+      ...(session.origin === 'imported' ? { origin: 'imported' as const } : {}),
+      ...(session.importedFrom ? { importedFrom: session.importedFrom } : {}),
+    })),
+  );
+}
+
+/** Returns the existing record for this exact exported report, if any. */
+export async function findImportedSession(
+  sourceSessionId: string,
+  generatedAt: string,
+): Promise<StoredSession | undefined> {
+  const sessions = await getAllSessions();
+  return sessions.find(
+    (session) =>
+      session.importedFrom?.sessionId === sourceSessionId &&
+      session.importedFrom?.generatedAt === generatedAt,
+  );
+}
+
+/**
+ * Writes the whole imported report in a single transaction. A failure anywhere
+ * rolls the transaction back, so a half-imported session never appears in the
+ * history. Existing sessions are never modified: every id is fresh.
+ */
+export async function importSessionBundle(bundle: ImportBundle): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(['sessions', 'metrics', 'events', 'experiments'], 'readwrite');
+  const sessionStore = tx.objectStore('sessions');
+
+  // Enforce bounds before any write so the transaction stays empty on rejection.
+  if ((await sessionStore.count()) >= STORAGE_LIMITS.maxSessions) {
+    throw new ImportLimitError(
+      `История заполнена (${STORAGE_LIMITS.maxSessions} сессий). Удалите старые сессии или уменьшите срок хранения.`,
+    );
+  }
+
+  const source = bundle.session.importedFrom;
+  const alreadyImported = ((await sessionStore.getAll()) as StoredSession[]).some(
+    (session) =>
+      Boolean(source) &&
+      session.importedFrom?.sessionId === source?.sessionId &&
+      session.importedFrom?.generatedAt === source?.generatedAt,
+  );
+  if (alreadyImported) {
+    throw new DuplicateImportError('Этот отчёт уже импортирован');
+  }
+
+  const { metrics: _metrics, events: _events, ...sessionData } = bundle.session;
+  await sessionStore.put({ ...sessionData, schemaVersion: SCHEMA_VERSION });
+
+  const metricStore = tx.objectStore('metrics');
+  for (const metric of bundle.metrics) {
+    await metricStore.put(metric);
+  }
+  const eventStore = tx.objectStore('events');
+  for (const event of bundle.events) {
+    await eventStore.put(event);
+  }
+  const experimentStore = tx.objectStore('experiments');
+  for (const experiment of bundle.experiments) {
+    await experimentStore.put(experiment);
+  }
+
+  await tx.done;
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

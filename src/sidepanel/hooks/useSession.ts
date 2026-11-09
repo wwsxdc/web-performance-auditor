@@ -67,6 +67,18 @@ export function useSession() {
       });
   }, []);
 
+  const refreshState = useCallback(async () => {
+    try {
+      const response = await sendRuntimeMessage<{ state?: AppState; error?: string }>({
+        type: 'GET_STATE',
+        requestId: generateId(),
+      });
+      if (response?.state) setState(response.state);
+    } catch {
+      // The service worker may be restarting; the next broadcast will recover.
+    }
+  }, []);
+
   useEffect(() => {
     if (!isLoading) {
       void refreshActiveTab();
@@ -222,6 +234,7 @@ export function useSession() {
     stopSession,
     highlightTarget,
     clearHighlight,
+    refreshState,
     isLoading,
   };
 }

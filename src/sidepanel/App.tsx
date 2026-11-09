@@ -13,6 +13,8 @@ import { DataCleanup } from './components/DataCleanup';
 import { EventsPanel } from './components/EventsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
+import { ImportReportCard } from './components/ImportReportCard';
+import { SessionHistory } from './components/SessionHistory';
 import {
   OverlayControls,
   type ActiveOverlayState,
@@ -51,9 +53,11 @@ export default function App() {
     stopSession,
     highlightTarget,
     clearHighlight,
+    refreshState,
     isLoading,
   } = useSession();
   const [view, setView] = useState<View>('overview');
+  const [historyRevision, setHistoryRevision] = useState(0);
   const tabRefs = useRef<Partial<Record<View, HTMLButtonElement | null>>>({});
 
   // WAI-ARIA tabs: the tab list is a single stop, arrows move selection.
@@ -236,12 +240,30 @@ export default function App() {
 
   const collectorStatus = state?.collectorStatus ?? 'idle';
 
+  const refreshHistory = () => setHistoryRevision((value) => value + 1);
+
   const handleCleared = async () => {
     setSelectedName(null);
     setActiveOverlays({});
     autoTargetsRef.current = {};
     await clearHighlight();
     await refreshExperiments();
+    refreshHistory();
+    await refreshState();
+  };
+
+  const handleImported = () => {
+    refreshHistory();
+    void refreshState();
+  };
+
+  const handleSessionSelected = () => {
+    void refreshState();
+  };
+
+  const handleSessionDeleted = () => {
+    refreshHistory();
+    void refreshState();
   };
 
   if (collectorStatus === 'unsupported' || collectorStatus === 'permission-denied') {
@@ -534,6 +556,14 @@ export default function App() {
 
       {showData && (
         <div className="space-y-3">
+          <ImportReportCard onImported={handleImported} />
+          <SessionHistory
+            revision={historyRevision}
+            activeSessionId={session?.id ?? null}
+            hasActiveSession={session?.status === 'active'}
+            onSelected={handleSessionSelected}
+            onDeleted={handleSessionDeleted}
+          />
           <SettingsPanel />
           <DiagnosticsPanel />
           <DataCleanup onCleared={handleCleared} />

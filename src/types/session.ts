@@ -18,9 +18,24 @@ export type SessionStatus =
   | 'unsupported'
   | 'error';
 
+/**
+ * Provenance of a report imported from a previously exported JSON file.
+ * Imported records are read-only history: they never become a live session and
+ * never create DNR rules.
+ */
+export interface ImportedReportSource {
+  sessionId: string;
+  generatedAt: string;
+  toolVersion: string;
+}
+
 export interface AuditSession {
   id: string;
   schemaVersion: number;
+
+  /** Set only for sessions created by importing an exported report. */
+  origin?: 'imported';
+  importedFrom?: ImportedReportSource;
 
   tabId: number;
   documentId?: string;
@@ -41,4 +56,18 @@ export interface AuditSession {
   events: DiagnosticEvent[];
 
   experimentIds: string[];
+}
+
+/** Lightweight history row; metrics/events are loaded only on selection. */
+export interface SessionSummary {
+  id: string;
+  url: string;
+  startedAt: number;
+  endedAt?: number;
+  status: SessionStatus;
+  metricCount: number;
+  eventCount: number;
+  experimentCount: number;
+  origin?: 'imported';
+  importedFrom?: ImportedReportSource;
 }

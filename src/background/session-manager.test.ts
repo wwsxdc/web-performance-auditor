@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RESTORE_NAVIGATION_GRACE_MS, SessionManager } from './session-manager';
 import * as storage from './storage';
 import { validateJsonReport } from '../utils/report-schema';
+import { makeImportReport } from '../test/report-fixture';
 import { EVENT_BATCHING, STORAGE_LIMITS } from '../constants/config';
 
 const localStore = new Map<string, unknown>();
@@ -861,5 +862,106 @@ describe('SessionManager', () => {
     expect(report?.metrics.find((metric) => rawId(metric.id) === 'm2')?.navigationId).toBe(
       spaNavigation?.id,
     );
+  });
+});
+
+describe('SessionManager import and history', () => {
+  it('imports an exported report and shows it while idle', async () => {
+    const manager = new SessionManager();
+    const result = await manager.importReport(makeImportReport());
+
+    expect(result.success).toBe(true);
+    expect(result.sessionId).toBeDefined();
+    expect(result.summary?.metricCount).toBe(1);
+    expect(result.warnings?.join(' ')).toContain('прерванная');
+
+    const state = await manager.getState();
+    expect(state.session?.id).toBe(result.sessionId);
+    expect(state.session?.origin).toBe('imported');
+    expect(state.session?.metrics).toHaveLength(1);
+    expect(state.session?.events).toHaveLength(1);
+
+    const list = await manager.getSessionList();
+    expect(list.some((summary) => summary.id === result.sessionId)).toBe(true);
+  });
+
+  it('rejects the same report twice without duplicating history', async () => {
+    const manager = new SessionManager();
+    await manager.importReport(makeImportReport());
+    const second = await manager.importReport(makeImportReport());
+
+    expect(second.error).toContain('уже импортирован');
+    expect(await manager.getSessionList()).toHaveLength(1);
+  });
+
+  it('rejects a report with an unsafe URL and writes nothing', async () => {
+    const manager = new SessionManager();
+    const report = makeImportReport();
+    report.session.url = 'javascript:alert(1)';
+
+    const result = await manager.importReport(report);
+
+    expect(result.error).toContain('URL сессии');
+    expect(await manager.getSessionList()).toEqual([]);
+  });
+
+  it('keeps the active audit untouched while importing', async () => {
+    const manager = new SessionManager();
+    const active = await manager.startSession(1, 'https://example.com/');
+    const result = await manager.importReport(makeImportReport());
+
+    expect(result.success).toBe(true);
+    const state = await manager.getState();
+    expect(state.session?.id).toBe(active.id);
+    expect(state.session?.status).toBe('active');
+    expect((await manager.getSessionList()).map((summary) => summary.id)).toContain(
+      result.sessionId,
+    );
+  });
+
+  it('refuses to select another session while an audit is running', async () => {
+    const manager = new SessionManager();
+    await manager.startSession(1, 'https://example.com/');
+    const imported = await manager.importReport(makeImportReport());
+    const selected = await manager.selectSession(imported.sessionId!);
+
+    expect(selected.error).toContain('остановите наблюдение');
+  });
+
+  it('selects an imported session after the audit stops', async () => {
+    const manager = new SessionManager();
+    const active = await manager.startSession(1, 'https://example.com/');
+    const imported = await manager.importReport(makeImportReport());
+    await manager.endSession(active.id, 'completed');
+
+    const selected = await manager.selectSession(imported.sessionId!);
+
+    expect(selected.success).toBe(true);
+    expect((await manager.getState()).session?.id).toBe(imported.sessionId);
+  });
+
+  it('deletes an imported session and exposes the next newest one', async () => {
+    const manager = new SessionManager();
+    const older = await manager.startSession(1, 'https://example.com/');
+    await manager.endSession(older.id, 'completed');
+    const imported = await manager.importReport(makeImportReport());
+
+    const deleted = await manager.deleteSession(imported.sessionId!);
+
+    expect(deleted.success).toBe(true);
+    expect((await manager.getSessionList()).map((summary) => summary.id)).toEqual([older.id]);
+    // The older session becomes the visible fallback after the deletion.
+    const state = await manager.getState();
+    expect(state.session?.id).toBe(older.id);
+  });
+
+  it('refuses to delete the active session', async () => {
+    const manager = new SessionManager();
+    const active = await manager.startSession(1, 'https://example.com/');
+
+    const result = await manager.deleteSession(active.id);
+
+    expect(result.error).toContain('активную');
+    expect(await manager.getSessionById(active.id)).toBeDefined();
   });
 });

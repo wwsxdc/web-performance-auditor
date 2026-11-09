@@ -29,6 +29,12 @@ import type {
 } from '../types/metrics';
 import { generateId } from '../utils/id';
 import { calculateRating } from '../utils/rating';
+import {
+  BUFFERED_PROBE_WINDOW_MS,
+  LCP_PROBE_WINDOW_MS,
+  createBufferedProbe,
+  type BufferedProbe,
+} from './buffered-probe';
 
 const WPA_PREFIX = 'WPA_';
 const WPA_GLOBAL_KEY = '__WPA_COLLECTOR_ACTIVE__';
@@ -432,6 +438,7 @@ function computeClsWindow(
 function replayLcpFromBuffer(
   latest: Map<string, LatestMetric>,
   isStopped: () => boolean,
+  probe?: BufferedProbe,
 ): void {
   try {
     let resolved = false;
@@ -445,6 +452,7 @@ function replayLcpFromBuffer(
       const entry = entries[entries.length - 1] as
         | (PerformanceEntry & { element?: Element | null; url?: string; size?: number })
         | undefined;
+      if (entry) probe?.noteEntry(entry.startTime);
       // A buffered observer can fire with an empty list before the first
       // candidate is painted; keep waiting instead of giving up (this happens
       // when the collector starts at document_start).
@@ -574,6 +582,7 @@ function replayClsFromBuffer(
 function replayExistingEntries(
   latest: Map<string, LatestMetric>,
   isStopped: () => boolean,
+  lcpProbe?: BufferedProbe,
 ): void {
   try {
     if (!latest.has('FCP')) {
@@ -592,7 +601,7 @@ function replayExistingEntries(
     }
 
     if (!latest.has('LCP')) {
-      replayLcpFromBuffer(latest, isStopped);
+      replayLcpFromBuffer(latest, isStopped, lcpProbe);
     }
 
     if (!latest.has('CLS') && document.readyState === 'complete') {
@@ -654,6 +663,7 @@ function reportUnsupportedMetrics(): void {
 }
 
 function initCollector(): CollectorHandle {
+  const collectorStartedAt = performance.now();
   const latest = new Map<string, LatestMetric>();
   const longTasks: LongTaskInfo[] = [];
   const seenLongTaskIds = new Set<string>();
@@ -663,7 +673,9 @@ function initCollector(): CollectorHandle {
   let layoutShiftObserverEverStarted = false;
   let interactionObserver: PerformanceObserver | null = null;
   let interactionObserverEverStarted = false;
+  let lcpProbeScheduled = false;
   let stopped = false;
+  const probeTimers = new Set<number>();
 
   const capabilities = getCapabilities();
   const longTaskSupported = capabilities.includes('longtask');
@@ -679,7 +691,7 @@ function initCollector(): CollectorHandle {
   const seenLayoutShiftIds = new Set<string>();
   const seenInteractionIds = new Set<number>();
   const interactionTimers = new Set<number>();
-  const collectorLimitations = new Set<string>();
+  const collectorLimitations = new Map<string, string | undefined>();
   const recentEvents: Array<Record<string, unknown>> = [];
   const pendingInteractions = new Map<
     number,
@@ -693,26 +705,68 @@ function initCollector(): CollectorHandle {
     }
   >();
 
-  const collectorLimitationEvent = (collector: string): Record<string, unknown> => ({
+  const collectorLimitationEvent = (
+    collector: string,
+    message?: string,
+  ): Record<string, unknown> => ({
     eventId: `limitation-${DOCUMENT_TOKEN.slice(0, 8)}-${collector}`,
     eventType: 'collector-limitation',
     timestamp: Date.now(),
     details: {
       collector,
-      message: `${collector}: исторические записи недоступны, сбор начат с момента подключения`,
+      reason: message ? 'buffered-unavailable' : 'api-error',
+      message:
+        message ??
+        `${collector}: исторические записи недоступны, сбор начат с момента подключения`,
     },
   });
 
-  const reportCollectorLimitation = (collector: string): void => {
-    collectorLimitations.add(collector);
-    sendEvent(collectorLimitationEvent(collector));
+  const reportCollectorLimitation = (collector: string, message?: string): void => {
+    // One limitation per collector per document; a later probe must not add a
+    // second event for the same problem.
+    if (collectorLimitations.has(collector)) return;
+    collectorLimitations.set(collector, message);
+    sendEvent(collectorLimitationEvent(collector, message));
+  };
+
+  const historicalEntries = (entryType: string): PerformanceEntry[] => {
+    try {
+      return [...performance.getEntriesByType(entryType)];
+    } catch {
+      return [];
+    }
+  };
+
+  const scheduleProbe = (collector: string, probe: BufferedProbe, delay: number): void => {
+    const timer = window.setTimeout(() => {
+      probeTimers.delete(timer);
+      if (stopped) return;
+      if (probe.settle() !== 'unavailable') return;
+      reportCollectorLimitation(
+        collector,
+        `${collector}: браузер молча не отдал исторические записи, сбор начат с момента подключения (возможно)`,
+      );
+    }, delay);
+    probeTimers.add(timer);
+  };
+
+  const clearProbeTimers = (): void => {
+    for (const timer of probeTimers) window.clearTimeout(timer);
+    probeTimers.clear();
   };
 
   const startLongTaskObserver = (buffered: boolean): void => {
     if (!longTaskSupported || longTaskObserver) return;
+    const probe = buffered
+      ? createBufferedProbe({
+          collectorStartedAt,
+          historicalEntries: historicalEntries('longtask'),
+        })
+      : null;
     try {
       longTaskObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          probe?.noteEntry(entry.startTime);
           const id = `longtask-${DOCUMENT_TOKEN.slice(0, 8)}-${Math.round(entry.startTime * 1000)}-${Math.round(entry.duration * 1000)}`;
           if (seenLongTaskIds.has(id)) continue;
           seenLongTaskIds.add(id);
@@ -751,6 +805,7 @@ function initCollector(): CollectorHandle {
       });
       longTaskObserver.observe({ type: 'longtask', buffered });
       longTaskObserverEverStarted = true;
+      if (probe) scheduleProbe('LongTask', probe, BUFFERED_PROBE_WINDOW_MS);
     } catch (error) {
       longTaskObserver = null;
       if (buffered) {
@@ -783,9 +838,16 @@ function initCollector(): CollectorHandle {
 
   const startLayoutShiftObserver = (buffered: boolean): void => {
     if (!layoutShiftSupported || layoutShiftObserver) return;
+    const probe = buffered
+      ? createBufferedProbe({
+          collectorStartedAt,
+          historicalEntries: historicalEntries('layout-shift'),
+        })
+      : null;
     try {
       layoutShiftObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          probe?.noteEntry(entry.startTime);
           const shift = entry as PerformanceEntry & {
             value: number;
             hadRecentInput: boolean;
@@ -814,6 +876,7 @@ function initCollector(): CollectorHandle {
       });
       layoutShiftObserver.observe({ type: 'layout-shift', buffered });
       layoutShiftObserverEverStarted = true;
+      if (probe) scheduleProbe('LayoutShift', probe, BUFFERED_PROBE_WINDOW_MS);
     } catch (error) {
       layoutShiftObserver = null;
       if (buffered) {
@@ -827,9 +890,16 @@ function initCollector(): CollectorHandle {
 
   const startInteractionObserver = (buffered: boolean): void => {
     if (!interactionSupported || interactionObserver) return;
+    const probe = buffered
+      ? createBufferedProbe({
+          collectorStartedAt,
+          historicalEntries: historicalEntries('event'),
+        })
+      : null;
     try {
       interactionObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          probe?.noteEntry(entry.startTime);
           const event = entry as PerformanceEventTiming;
           if (stopped || !event.interactionId) continue;
           const existing = pendingInteractions.get(event.interactionId);
@@ -860,6 +930,7 @@ function initCollector(): CollectorHandle {
         durationThreshold: 40,
       } as PerformanceObserverInit);
       interactionObserverEverStarted = true;
+      if (probe) scheduleProbe('Interaction', probe, BUFFERED_PROBE_WINDOW_MS);
     } catch (error) {
       interactionObserver = null;
       if (buffered) {
@@ -879,6 +950,7 @@ function initCollector(): CollectorHandle {
     for (const timer of interactionTimers) window.clearTimeout(timer);
     interactionTimers.clear();
     pendingInteractions.clear();
+    clearProbeTimers();
   };
 
   const handleMetric = (metric: Metric, attribution?: MetricAttribution): void => {
@@ -957,7 +1029,18 @@ function initCollector(): CollectorHandle {
       // what web-vitals has observed so far (FCP/TTFB never fire twice).
       stopped = false;
       reportUnsupportedMetrics();
-      replayExistingEntries(latest, () => stopped);
+      let lcpProbe: BufferedProbe | undefined;
+      if (!lcpProbeScheduled) {
+        lcpProbeScheduled = true;
+        if (!latest.has('LCP')) {
+          lcpProbe = createBufferedProbe({
+            collectorStartedAt,
+            historicalEntries: historicalEntries('largest-contentful-paint'),
+          });
+          scheduleProbe('LCP', lcpProbe, LCP_PROBE_WINDOW_MS);
+        }
+      }
+      replayExistingEntries(latest, () => stopped, lcpProbe);
       startLongTaskObserver(!longTaskObserverEverStarted);
       startLayoutShiftObserver(!layoutShiftObserverEverStarted);
       startInteractionObserver(!interactionObserverEverStarted);
@@ -967,8 +1050,8 @@ function initCollector(): CollectorHandle {
       for (const event of recentEvents) {
         sendToExtension('EVENT', event);
       }
-      for (const collector of collectorLimitations) {
-        const event = collectorLimitationEvent(collector);
+      for (const [collector, message] of collectorLimitations) {
+        const event = collectorLimitationEvent(collector, message);
         if (!recentEventIds.has(event.eventId)) sendToExtension('EVENT', event);
       }
       for (const { metric, source, attribution, updateId, observedAt } of latest.values()) {

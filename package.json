@@ -1,6 +1,6 @@
 {
   "name": "web-performance-auditor",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Chrome extension for local Core Web Vitals auditing with DOM attribution and experiments.",
   "private": true,
   "license": "MIT",

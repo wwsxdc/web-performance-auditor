@@ -1,12 +1,13 @@
 import type { ExtensionMessage } from '../types/messages';
+import type { JsonReport } from '../types/report';
 import type { SessionManager } from './session-manager';
 import type { ExperimentManager } from './experiment-manager';
-import { isAuditableUrl } from '../utils/url';
 import { isExtensionMessage } from '../utils/validation';
 import { generateId } from '../utils/id';
 import { generateMarkdownReport } from '../utils/markdown';
 import { validateJsonReport } from '../utils/report-schema';
 import { injectCollector } from './injector';
+import { startAudit } from './start-audit';
 import { getSettings, updateRetentionDays } from './settings';
 import { cleanOldSessions } from './storage';
 import { clearDiagnostics, getDiagnostics, logDiagnostic } from './diagnostics';
@@ -260,6 +261,35 @@ export function handleMessage(
           break;
         }
 
+        case 'IMPORT_JSON': {
+          const report = message.report as JsonReport;
+          const validation = validateJsonReport(report);
+          if (!validation.valid) {
+            sendResponse({
+              error: `Некорректный отчёт: ${validation.errors[0] ?? 'неизвестная ошибка'}`,
+            });
+            break;
+          }
+          const result = await sessionManager.importReport(report);
+          sendResponse(result);
+          break;
+        }
+
+        case 'GET_SESSION_LIST': {
+          sendResponse({ sessions: await sessionManager.getSessionList() });
+          break;
+        }
+
+        case 'SELECT_SESSION': {
+          sendResponse(await sessionManager.selectSession(message.sessionId));
+          break;
+        }
+
+        case 'DELETE_SESSION': {
+          sendResponse(await sessionManager.deleteSession(message.sessionId));
+          break;
+        }
+
         case 'GET_SETTINGS': {
           sendResponse({ settings: await getSettings() });
           break;
@@ -354,36 +384,13 @@ async function handleSessionStart(
   sessionManager: SessionManager,
   sendResponse: (r: unknown) => void,
 ): Promise<void> {
-  try {
-    const tab = await chrome.tabs.get(message.tabId);
-    const url = tab.url ?? tab.pendingUrl;
-    const urlCheck = isAuditableUrl(url);
-
-    if (!urlCheck.auditable) {
-      await sessionManager.setCollectorStatus('unsupported', urlCheck.reason);
-      sendResponse({ error: urlCheck.reason, accessible: false });
-      return;
-    }
-
-    const session = await sessionManager.startSession(message.tabId, url!);
-
-    try {
-      // The bridge must be listening before the page script can emit metrics.
-      await injectCollector(message.tabId);
-    } catch (err) {
-      console.error('[WPA BG] Injection failed:', err);
-      await sessionManager.endSession(session.id, 'error');
-      await sessionManager.setCollectorStatus(
-        'permission-denied',
-        `Не удалось подключиться к странице: ${String(err)}`,
-      );
-      sendResponse({ error: String(err), accessible: false });
-      return;
-    }
-
-    sendResponse({ session, accessible: true });
-  } catch (err) {
-    await sessionManager.setCollectorStatus('error', String(err));
-    sendResponse({ error: String(err) });
-  }
+  const result = await startAudit(message.tabId, {
+    getTab: (tabId) => chrome.tabs.get(tabId),
+    startSession: (tabId, url) => sessionManager.startSession(tabId, url),
+    injectCollector,
+    endSession: (sessionId, status) => sessionManager.endSession(sessionId, status),
+    setCollectorStatus: (status, errorMsg) =>
+      sessionManager.setCollectorStatus(status, errorMsg),
+  });
+  sendResponse(result);
 }

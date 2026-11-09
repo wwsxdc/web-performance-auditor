@@ -121,6 +121,10 @@ export type ExtensionMessage =
   | { type: 'EXPERIMENT_CANCEL'; requestId: string; experimentId: string }
   | { type: 'EXPORT_JSON'; requestId: string; sessionId: string }
   | { type: 'EXPORT_MARKDOWN'; requestId: string; sessionId: string; experimentId?: string }
+  | { type: 'IMPORT_JSON'; requestId: string; report: unknown }
+  | { type: 'GET_SESSION_LIST'; requestId: string }
+  | { type: 'SELECT_SESSION'; requestId: string; sessionId: string }
+  | { type: 'DELETE_SESSION'; requestId: string; sessionId: string }
   | { type: 'CLEAR_HISTORY'; requestId: string }
   | { type: 'GET_SETTINGS'; requestId: string }
   | { type: 'UPDATE_SETTINGS'; requestId: string; retentionDays: number }

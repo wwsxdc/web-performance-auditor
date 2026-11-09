@@ -217,6 +217,22 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         (value.experimentId === undefined || isString(value.experimentId))
       );
 
+    case 'IMPORT_JSON':
+      return (
+        isString(value.requestId) &&
+        isObject(value.report) &&
+        !Array.isArray(value.report)
+      );
+
+    case 'GET_SESSION_LIST':
+      return isString(value.requestId);
+
+    case 'SELECT_SESSION':
+      return isString(value.requestId) && isString(value.sessionId);
+
+    case 'DELETE_SESSION':
+      return isString(value.requestId) && isString(value.sessionId);
+
     case 'COLLECTOR_STATUS':
       return (
         isString(value.requestId) &&

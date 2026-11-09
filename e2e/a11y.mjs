@@ -8,7 +8,7 @@
  *   HEADLESS=1 npm run a11y # headless
  */
 import puppeteer from 'puppeteer-core';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -197,6 +197,45 @@ async function main() {
     for (const label of ['События', 'Эксперименты', 'Данные']) {
       await clickTab(panel, label);
       await audit(panel, `side panel: сессия «${label}»`);
+    }
+
+    // v0.2.0: the import preview and the imported history row are separate
+    // accessible states; the preview exposes a file input, lists and a submit
+    // button that are not present in the empty state.
+    const exportState = await send('GET_STATE');
+    const exported = await send('EXPORT_JSON', {
+      sessionId: exportState?.state?.session?.id,
+    });
+    if (exported?.report) {
+      const reportPath = path.join(userDataDir, 'a11y-report.json');
+      writeFileSync(reportPath, JSON.stringify(exported.report, null, 2));
+
+      await clickTab(panel, 'Данные');
+      const fileInput = await panel.$('#wpa-import-file');
+      if (fileInput) {
+        await fileInput.uploadFile(reportPath);
+        await panel
+          .waitForFunction(() => document.body.innerText.includes('Импортировать'), {
+            timeout: 10000,
+          })
+          .catch(() => undefined);
+        await audit(panel, 'side panel: предпросмотр импорта');
+
+        await panel.evaluate(() => {
+          [...document.querySelectorAll('button')]
+            .find((button) => button.textContent?.trim() === 'Импортировать')
+            ?.click();
+        });
+        await panel
+          .waitForFunction(() => document.body.innerText.includes('Импортировано:'), {
+            timeout: 10000,
+          })
+          .catch(() => undefined);
+        await clickTab(panel, 'Обзор');
+        await clickTab(panel, 'Данные');
+        await sleep(400);
+        await audit(panel, 'side panel: импортированная сессия в истории');
+      }
     }
 
     // Keyboard-only path: Tab must reach every visible control in each view with

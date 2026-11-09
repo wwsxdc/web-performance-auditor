@@ -1,4 +1,4 @@
-import type { AuditSession } from '../types/session';
+import type { AuditSession, SessionSummary } from '../types/session';
 import type { MetricRecord, MetricName } from '../types/metrics';
 import type { DiagnosticEvent } from '../types/events';
 import type { AppState, CollectorStatus, OverlayStatus } from '../types/messages';
@@ -7,6 +7,12 @@ import { generateId } from '../utils/id';
 import { calculateRating } from '../utils/rating';
 import { calculateCompleteness } from '../utils/completeness';
 import { isAuditableUrl, sanitizeUrl } from '../utils/url';
+import {
+  buildImportBundle,
+  importSummary,
+  validateImportIntegrity,
+  type ImportSummary,
+} from '../utils/report-import';
 import {
   isEventType,
   isMetricName,
@@ -25,6 +31,20 @@ import { METRIC_THRESHOLDS } from '../constants/thresholds';
 import * as storage from './storage';
 
 export const RESTORE_NAVIGATION_GRACE_MS = 2000;
+
+export interface ImportReportResult {
+  success?: boolean;
+  error?: string;
+  sessionId?: string;
+  summary?: ImportSummary;
+  warnings?: string[];
+}
+
+export interface SessionActionResult {
+  success?: boolean;
+  error?: string;
+  sessionId?: string;
+}
 
 function consolidateMetricUpdates(metrics: MetricRecord[]): MetricRecord[] {
   const byMetric = new Map<string, MetricRecord>();
@@ -578,6 +598,95 @@ export class SessionManager {
 
   getSessionById(sessionId: string): Promise<AuditSession | undefined> {
     return storage.getSession(sessionId);
+  }
+
+  getSessionList(limit = STORAGE_LIMITS.maxSessions): Promise<SessionSummary[]> {
+    return storage.getSessionSummaries(limit);
+  }
+
+  /**
+   * Imports an exported report as a new, independent history entry. It never
+   * overwrites an existing session, never becomes active, and never restores
+   * DNR rules. The active audit (if any) is left untouched.
+   */
+  importReport(report: JsonReport): Promise<ImportReportResult> {
+    return this.enqueue(async () => {
+      const integrity = validateImportIntegrity(report);
+      if (!integrity.valid) {
+        return {
+          error: `Отчёт не прошёл проверку импорта: ${integrity.errors.slice(0, 3).join('; ')}`,
+        };
+      }
+
+      if (await storage.findImportedSession(report.session.id, report.generatedAt)) {
+        return { error: 'Этот отчёт уже импортирован' };
+      }
+      if ((await storage.getAllSessions()).length >= STORAGE_LIMITS.maxSessions) {
+        return {
+          error: `История заполнена (${STORAGE_LIMITS.maxSessions} сессий). Удалите старые сессии или уменьшите срок хранения.`,
+        };
+      }
+
+      const bundle = buildImportBundle(report);
+      try {
+        await storage.importSessionBundle(bundle);
+      } catch (error) {
+        if (
+          error instanceof storage.ImportLimitError ||
+          error instanceof storage.DuplicateImportError
+        ) {
+          return { error: error.message };
+        }
+        throw error;
+      }
+
+      // Make the import visible in the overview when no audit is running.
+      if (!this.currentSessionId) {
+        this.lastSessionId = bundle.session.id;
+      }
+      await this.broadcastState();
+
+      return {
+        success: true,
+        sessionId: bundle.session.id,
+        summary: importSummary(report, bundle),
+        warnings: bundle.warnings,
+      };
+    });
+  }
+
+  /** Shows a stored session in the panel. Refused while an audit is running. */
+  selectSession(sessionId: string): Promise<SessionActionResult> {
+    return this.enqueue(async () => {
+      if (this.currentSessionId) {
+        return { error: 'Сначала остановите наблюдение' };
+      }
+      const session = await storage.getSession(sessionId);
+      if (!session) return { error: 'Сессия не найдена' };
+      this.lastSessionId = session.id;
+      this.error = undefined;
+      await this.broadcastState();
+      return { success: true, sessionId: session.id };
+    });
+  }
+
+  /** Deletes a stored session and everything that references it. */
+  deleteSession(sessionId: string): Promise<SessionActionResult> {
+    return this.enqueue(async () => {
+      if (this.currentSessionId === sessionId) {
+        return { error: 'Нельзя удалить активную сессию' };
+      }
+      const session = await storage.getSession(sessionId);
+      if (!session) return { error: 'Сессия не найдена' };
+
+      await storage.deleteSession(sessionId);
+      if (this.lastSessionId === sessionId) {
+        const [next] = await storage.getSessionSummaries(1);
+        this.lastSessionId = next?.id ?? null;
+      }
+      await this.broadcastState();
+      return { success: true };
+    });
   }
 
   isActiveForTab(tabId: number): boolean {

@@ -567,6 +567,81 @@ async function main() {
       `metrics=${report?.metrics?.length ?? 0}, attribution=${report?.attribution?.length ?? 0}`,
     );
 
+    // v0.2.0: importing an exported report adds independent history and never
+    // touches the session that produced the file.
+    const imported = await send('IMPORT_JSON', { report });
+    const importedId = imported?.sessionId;
+    check(
+      'IMPORT_JSON',
+      imported?.success === true &&
+        typeof importedId === 'string' &&
+        imported.summary?.metricCount === report.metrics.length,
+      `id=${importedId?.slice(0, 12)}, metrics=${imported?.summary?.metricCount}`,
+    );
+    const duplicateImport = await send('IMPORT_JSON', { report });
+    check(
+      'IMPORT_DUPLICATE',
+      typeof duplicateImport?.error === 'string' &&
+        duplicateImport.error.includes('уже импортирован'),
+      duplicateImport?.error,
+    );
+    const listAfterImport = await send('GET_SESSION_LIST');
+    const importedRow = listAfterImport?.sessions?.find((entry) => entry.id === importedId);
+    check(
+      'SESSION_LIST_IMPORTED',
+      importedRow?.origin === 'imported' &&
+        importedRow.metricCount === report.metrics.length &&
+        importedRow.eventCount === report.events.length,
+      `origin=${importedRow?.origin}, metrics=${importedRow?.metricCount}`,
+    );
+
+    await panel.evaluate(() => {
+      [...document.querySelectorAll('[role="tab"]')]
+        .find((tab) => tab.textContent?.trim() === 'Данные')
+        ?.click();
+    });
+    await panel.waitForFunction(
+      () =>
+        document.body.innerText.includes('Импорт отчёта') &&
+        document.body.innerText.includes('История сессий'),
+      { timeout: 5000 },
+    );
+    const dataTab = await panel.evaluate(() => ({
+      text: document.body.innerText,
+      importedBadge: document.body.innerText.includes('Импорт'),
+    }));
+    check(
+      'IMPORT_HISTORY_UI',
+      dataTab.text.includes('Импорт отчёта') &&
+        dataTab.text.includes('История сессий') &&
+        dataTab.importedBadge,
+      `badge=${dataTab.importedBadge}`,
+    );
+
+    const selectedImport = await send('SELECT_SESSION', { sessionId: importedId });
+    const selectedImportState = await getState();
+    check(
+      'SELECT_IMPORTED_SESSION',
+      selectedImport?.success === true &&
+        selectedImportState?.session?.id === importedId &&
+        selectedImportState.session.origin === 'imported',
+      `session=${selectedImportState?.session?.id?.slice(0, 12)}`,
+    );
+
+    const deletedImport = await send('DELETE_SESSION', { sessionId: importedId });
+    const listAfterDelete = await send('GET_SESSION_LIST');
+    check(
+      'DELETE_IMPORTED_SESSION',
+      deletedImport?.success === true &&
+        !listAfterDelete?.sessions?.some((entry) => entry.id === importedId),
+      `sessions=${listAfterDelete?.sessions?.length ?? 0}`,
+    );
+    await panel.evaluate(() => {
+      [...document.querySelectorAll('[role="tab"]')]
+        .find((tab) => tab.textContent?.trim() === 'Обзор')
+        ?.click();
+    });
+
     const historySession = await send('SESSION_START', { tabId });
     check(
       'HISTORY_SESSION_START',
