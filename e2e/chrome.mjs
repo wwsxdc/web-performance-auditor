@@ -40,16 +40,25 @@ export function findChrome() {
   return found;
 }
 
+// GitHub-hosted Linux runners disable unprivileged user namespaces, so Chrome
+// aborts with "No usable sandbox!" unless the sandbox is turned off. Keep the
+// flags in one place: benchmarks launch a baseline browser without extensions.
+export function baseLaunchArgs() {
+  return [
+    '--no-first-run',
+    '--no-default-browser-check',
+    ...(process.platform === 'linux'
+      ? ['--no-sandbox', '--disable-setuid-sandbox']
+      : []),
+  ];
+}
+
 export function extensionLaunchArgs(dist) {
   return [
     `--disable-extensions-except=${dist}`,
     `--load-extension=${dist}`,
-    '--no-first-run',
-    '--no-default-browser-check',
+    ...baseLaunchArgs(),
     '--host-resolver-rules=MAP blocked.test 127.0.0.1',
     '--window-size=1280,900',
-    ...(process.platform === 'linux'
-      ? ['--no-sandbox', '--disable-setuid-sandbox']
-      : []),
   ];
 }

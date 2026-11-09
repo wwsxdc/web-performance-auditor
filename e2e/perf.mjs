@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extensionLaunchArgs, findChrome } from './chrome.mjs';
+import { baseLaunchArgs, extensionLaunchArgs, findChrome } from './chrome.mjs';
 import { startFixtureServer } from './server.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,9 +47,7 @@ async function launch(useExtension) {
     executablePath: findChrome(),
     headless,
     userDataDir,
-    args: useExtension
-      ? extensionLaunchArgs(dist)
-      : ['--no-first-run', '--no-default-browser-check'],
+    args: useExtension ? extensionLaunchArgs(dist) : baseLaunchArgs(),
   });
   return { browser, userDataDir };
 }

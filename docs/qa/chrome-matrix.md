@@ -11,7 +11,7 @@
 | Сборка | `dist/` из `main`, `v0.3.0` |
 | E2E | `HEADLESS=1 npm run e2e` — 47/47 PASS |
 | Accessibility | `HEADLESS=1 npm run a11y` — 23/23 PASS |
-| Performance | `HEADLESS=1 npm run bench` — PASS (+6,5 % TaskDuration, +0,47 МБ heap) |
+| Performance | `HEADLESS=1 npm run bench` — PASS (+8,5 % TaskDuration, +0,31 МБ heap) |
 | Release | `npm run package` + `npm run verify:release` — PASS |
 
 Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 137 брендовая
