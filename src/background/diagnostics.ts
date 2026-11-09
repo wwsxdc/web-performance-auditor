@@ -1,5 +1,6 @@
 import { generateId } from '../utils/id';
 import type { DiagnosticLogEntry } from '../types/diagnostics';
+import { extensionApi } from '../browser/api';
 
 const KEY = 'wpa_diagnostics';
 const MAX_ENTRIES = 30;
@@ -11,7 +12,7 @@ function toMessage(error: unknown): string {
 
 export async function logDiagnostic(scope: string, error: unknown): Promise<void> {
   try {
-    const stored = await chrome.storage.local.get(KEY);
+    const stored = await extensionApi.storage.local.get(KEY);
     const current = Array.isArray(stored[KEY])
       ? (stored[KEY] as DiagnosticLogEntry[])
       : [];
@@ -21,7 +22,7 @@ export async function logDiagnostic(scope: string, error: unknown): Promise<void
       scope,
       message: toMessage(error).slice(0, 500),
     };
-    await chrome.storage.local.set({
+    await extensionApi.storage.local.set({
       [KEY]: [entry, ...current].slice(0, MAX_ENTRIES),
     });
   } catch {
@@ -31,7 +32,7 @@ export async function logDiagnostic(scope: string, error: unknown): Promise<void
 
 export async function getDiagnostics(): Promise<DiagnosticLogEntry[]> {
   try {
-    const stored = await chrome.storage.local.get(KEY);
+    const stored = await extensionApi.storage.local.get(KEY);
     return Array.isArray(stored[KEY]) ? (stored[KEY] as DiagnosticLogEntry[]) : [];
   } catch {
     return [];
@@ -40,7 +41,7 @@ export async function getDiagnostics(): Promise<DiagnosticLogEntry[]> {
 
 export async function clearDiagnostics(): Promise<void> {
   try {
-    await chrome.storage.local.remove(KEY);
+    await extensionApi.storage.local.remove(KEY);
   } catch {
     // Nothing to clear.
   }

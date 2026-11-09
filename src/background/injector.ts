@@ -1,4 +1,5 @@
 import { CONTENT_SCRIPT_FILE, PAGE_SCRIPT_FILE } from '../constants/config';
+import { extensionApi } from '../browser/api';
 
 /**
  * Injects the isolated bridge first, then starts the MAIN-world collector.
@@ -6,12 +7,12 @@ import { CONTENT_SCRIPT_FILE, PAGE_SCRIPT_FILE } from '../constants/config';
  * after the page has already loaded.
  */
 export async function injectCollector(tabId: number): Promise<void> {
-  await chrome.scripting.executeScript({
+  await extensionApi.scripting.executeScript({
     target: { tabId },
     files: [CONTENT_SCRIPT_FILE],
   });
 
-  await chrome.scripting.executeScript({
+  await extensionApi.scripting.executeScript({
     target: { tabId },
     files: [PAGE_SCRIPT_FILE],
     world: 'MAIN' as chrome.scripting.ExecutionWorld,

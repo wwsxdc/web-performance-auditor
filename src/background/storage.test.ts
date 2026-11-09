@@ -14,6 +14,7 @@ import {
   getExperiment,
   getExperimentsForSession,
   getSession,
+  getSessionSummaries,
   saveEvents,
   saveExperiment,
   saveSession,
@@ -74,6 +75,30 @@ function putRawRecord(store: 'sessions' | 'experiments', value: unknown): Promis
       tx.onerror = () => {
         db.close();
         reject(tx.error);
+      };
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getRawRecord(
+  store: 'sessions' | 'experiments',
+  key: string,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('wpa-store');
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction(store, 'readonly');
+      const get = tx.objectStore(store).get(key);
+      get.onsuccess = () => {
+        const value = get.result;
+        db.close();
+        resolve(value);
+      };
+      get.onerror = () => {
+        db.close();
+        reject(get.error);
       };
     };
     request.onerror = () => reject(request.error);
@@ -194,10 +219,10 @@ describe('storage cleanup', () => {
     expect(await getAllSessions()).toHaveLength(1);
   });
 
-  it('reclaims unsupported-schema sessions during cleanup even when marked active', async () => {
+  it('reclaims unknown-schema sessions during cleanup even when marked active', async () => {
     const legacySession = {
       ...makeSession('legacy-active', Date.now(), 'active'),
-      schemaVersion: SCHEMA_VERSION - 1,
+      schemaVersion: SCHEMA_VERSION + 1,
     };
     await putRawRecord('sessions', legacySession);
 
@@ -207,12 +232,12 @@ describe('storage cleanup', () => {
     expect(await getSession('legacy-active')).toBeUndefined();
   });
 
-  it('drops an incompatible running experiment without deleting its supported session', async () => {
+  it('drops an unknown-schema running experiment without deleting its supported session', async () => {
     const supported = makeSession('supported', Date.now(), 'active');
     await saveSession(supported);
     await putRawRecord('experiments', {
       ...makeExperiment('legacy-running', supported.id, 'running'),
-      schemaVersion: SCHEMA_VERSION - 1,
+      schemaVersion: SCHEMA_VERSION + 1,
     });
 
     const deleted = await cleanOldSessions();
@@ -222,11 +247,14 @@ describe('storage cleanup', () => {
     expect((await getAllSessions()).some((session) => session.id === supported.id)).toBe(true);
   });
 
-  it('ignores stored records with an unsupported schema version', async () => {
-    const legacySession = { ...makeSession('legacy-session', Date.now()), schemaVersion: SCHEMA_VERSION - 1 };
+  it('ignores stored records with an unknown schema version', async () => {
+    const legacySession = {
+      ...makeSession('legacy-session', Date.now()),
+      schemaVersion: SCHEMA_VERSION + 1,
+    };
     const legacyExperiment = {
       ...makeExperiment('legacy-experiment', legacySession.id, 'completed'),
-      schemaVersion: SCHEMA_VERSION - 1,
+      schemaVersion: SCHEMA_VERSION + 1,
     };
     await putRawRecord('sessions', legacySession);
     await putRawRecord('experiments', legacyExperiment);
@@ -236,5 +264,209 @@ describe('storage cleanup', () => {
     expect(await getAllSessions()).toEqual([]);
     expect(await getAllExperiments()).toEqual([]);
     expect(await getExperimentsForSession('legacy-session')).toEqual([]);
+  });
+});
+
+describe('schema migrations', () => {
+  function makeV1Session(id: string): Record<string, unknown> {
+    return {
+      id,
+      schemaVersion: 1,
+      tabId: 7,
+      url: 'https://example.com/legacy?token=secret',
+      startedAt: 1_700_000_000_000,
+      status: 'interrupted',
+      // v1 had a single navigation id instead of the navigation list.
+      navigationId: 'legacy-navigation',
+      // v1 stored the browser as a plain string.
+      browser: 'Chrome',
+    };
+  }
+
+  it('migrates a v1 session on read and writes the current schema back', async () => {
+    await putRawRecord('sessions', makeV1Session('legacy-session'));
+
+    const session = await getSession('legacy-session');
+
+    expect(session?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(session?.navigations).toEqual([
+      {
+        id: 'legacy-navigation',
+        sessionId: 'legacy-session',
+        url: 'https://example.com/legacy?token=secret',
+        kind: 'document',
+        startedAt: 1_700_000_000_000,
+      },
+    ]);
+    expect(session?.browser).toEqual({ name: 'Chrome' });
+    expect(session?.experimentIds).toEqual([]);
+
+    // The migration is persisted, not just normalised for this call.
+    const raw = await getRawRecord('sessions', 'legacy-session') as { schemaVersion?: number };
+    expect(raw.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('migrates v1 sessions in list and summary reads', async () => {
+    await putRawRecord('sessions', makeV1Session('legacy-session'));
+
+    const sessions = await getAllSessions();
+    const summaries = await getSessionSummaries();
+
+    expect(sessions.map((session) => session.id)).toEqual(['legacy-session']);
+    expect(sessions[0]?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(summaries.map((summary) => summary.id)).toEqual(['legacy-session']);
+  });
+
+  it('applies retention to a migrated v1 session as a normal completed record', async () => {
+    await putRawRecord('sessions', {
+      ...makeV1Session('legacy-session'),
+      status: 'completed',
+      endedAt: 1_700_000_001_000,
+      // Older than the default 30-day retention window.
+      startedAt: Date.now() - 40 * 24 * 60 * 60 * 1000,
+    });
+
+    const deleted = await cleanOldSessions();
+    const raw = (await getRawRecord('sessions', 'legacy-session')) as {
+      schemaVersion?: number;
+    } | undefined;
+
+    // The migrated record is readable now, so retention applies normally and
+    // removes it as an expired completed session (it is not "unsupported").
+    expect(deleted).toBe(1);
+    expect(raw).toBeUndefined();
+  });
+
+  it('keeps a recent v1 session and persists the migrated record', async () => {
+    await putRawRecord('sessions', {
+      ...makeV1Session('recent-legacy'),
+      status: 'completed',
+      endedAt: Date.now() - 1000,
+      startedAt: Date.now() - 60_000,
+    });
+
+    const deleted = await cleanOldSessions();
+    const raw = (await getRawRecord('sessions', 'recent-legacy')) as {
+      schemaVersion?: number;
+      navigations?: unknown[];
+    } | undefined;
+
+    expect(deleted).toBe(0);
+    expect(raw?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(raw?.navigations).toHaveLength(1);
+    expect((await getSession('recent-legacy'))?.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('migrates a v1 session that is still active without dropping it', async () => {
+    await putRawRecord('sessions', {
+      ...makeV1Session('legacy-active'),
+      status: 'active',
+      startedAt: Date.now() - 40 * 24 * 60 * 60 * 1000,
+    });
+
+    const deleted = await cleanOldSessions();
+    const session = await getSession('legacy-active');
+
+    expect(deleted).toBe(0);
+    expect(session?.status).toBe('active');
+    expect(session?.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('migrates a v1 experiment with missing lifecycle fields and finds it by session', async () => {
+    const v1Experiment: Record<string, unknown> = {
+      id: 'legacy-experiment',
+      schemaVersion: 1,
+      baselineSessionId: 'baseline',
+      tabId: 1,
+      url: 'https://example.com/',
+      createdAt: 1000,
+      startedAt: 1200,
+      status: 'running',
+      preset: 'custom',
+      baselineValues: { LCP: 3000, CLS: 0.1, INP: 200, FCP: 1200, TTFB: 200 },
+      experimentValues: { LCP: 2500 },
+      rules: [{ id: 10_000, domains: ['cdn.example.net'] }],
+    };
+    await putRawRecord('experiments', v1Experiment);
+
+    const experiment = await getExperiment('legacy-experiment');
+
+    expect(experiment?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(experiment?.domains).toEqual([]);
+    expect(experiment?.limitations).toEqual([]);
+    expect(experiment?.comparison).toEqual([]);
+    expect(experiment?.experimentValues).toEqual({
+      LCP: 2500,
+      CLS: null,
+      INP: null,
+      FCP: null,
+      TTFB: null,
+    });
+    // A v1 running record still owns rules that must be cleaned up.
+    expect(experiment?.cleanupStatus).toBe('pending');
+    expect((await getExperimentsForSession('baseline')).map((item) => item.id)).toEqual([
+      'legacy-experiment',
+    ]);
+
+    const raw = await getRawRecord('experiments', 'legacy-experiment') as {
+      schemaVersion?: number;
+    };
+    expect(raw.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('does not overwrite a newer current-schema session with a migrated snapshot', async () => {
+    await putRawRecord('sessions', {
+      ...makeV1Session('race-session'),
+      status: 'active',
+    });
+
+    await Promise.all([
+      getSession('race-session'),
+      saveSession({ ...makeSession('race-session', 1_700_000_000_000), status: 'interrupted' }),
+    ]);
+
+    const raw = (await getRawRecord('sessions', 'race-session')) as {
+      schemaVersion?: number;
+      status?: string;
+    };
+    // Whichever operation lands second must respect the current-schema write;
+    // the conditional write-back can never resurrect `active`.
+    expect(raw.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(raw.status).toBe('interrupted');
+  });
+
+  it('does not overwrite a newer current-schema experiment with a migrated snapshot', async () => {
+    await putRawRecord('experiments', {
+      id: 'race-experiment',
+      schemaVersion: 1,
+      baselineSessionId: 'baseline',
+      tabId: 1,
+      url: 'https://example.com/',
+      createdAt: 1000,
+      startedAt: 1100,
+      status: 'running',
+      preset: 'custom',
+      baselineValues: { LCP: 3000, CLS: 0.1, INP: 200, FCP: 1200, TTFB: 200 },
+      experimentValues: { LCP: 2500 },
+      rules: [],
+    });
+
+    await Promise.all([
+      getAllExperiments(),
+      saveExperiment({
+        ...makeExperiment('race-experiment', 'baseline', 'completed'),
+        cleanupStatus: 'completed',
+        cleanupVerified: true,
+      }),
+    ]);
+
+    const raw = (await getRawRecord('experiments', 'race-experiment')) as {
+      schemaVersion?: number;
+      status?: string;
+      cleanupStatus?: string;
+    };
+    expect(raw.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(raw.status).toBe('completed');
+    expect(raw.cleanupStatus).toBe('completed');
   });
 });

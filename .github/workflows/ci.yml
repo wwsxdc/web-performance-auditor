@@ -24,11 +24,20 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run verify
+      - name: Build Firefox package
+        run: node scripts/build-firefox.mjs
       - name: Upload extension build
         uses: actions/upload-artifact@v7
         with:
           name: web-performance-auditor-dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload Firefox build
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-performance-auditor-firefox
+          path: dist-firefox/
           if-no-files-found: error
           retention-days: 7
 
@@ -56,10 +65,31 @@ jobs:
           HEADLESS: '1'
           WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
 
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: verify
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Collector overhead budget
+        run: npm run bench
+        env:
+          HEADLESS: '1'
+          WPA_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          WPA_PERF_RUNS: '5'
+
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: e2e
+    needs: [e2e, perf]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

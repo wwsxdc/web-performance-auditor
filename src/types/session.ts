@@ -29,6 +29,26 @@ export interface ImportedReportSource {
   toolVersion: string;
 }
 
+/**
+ * Persisted session header. Metrics and events live in their own object store;
+ * this is the shape the storage layer stores and migrates.
+ */
+export interface StoredSession {
+  id: string;
+  schemaVersion: number;
+  origin?: 'imported';
+  importedFrom?: ImportedReportSource;
+  tabId: number;
+  documentId?: string;
+  url: string;
+  startedAt: number;
+  endedAt?: number;
+  status: SessionStatus;
+  browser: { name: string; version?: string };
+  navigations: NavigationRecord[];
+  experimentIds: string[];
+}
+
 export interface AuditSession {
   id: string;
   schemaVersion: number;

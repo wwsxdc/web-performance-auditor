@@ -1,12 +1,12 @@
 # Web Performance Auditor
 
-Расширение Chrome (Manifest V3) для локального аудита Core Web Vitals. Собирает
-LCP, CLS, INP, FCP и TTFB через `web-vitals`, связывает метрики с DOM-целями,
-показывает динамику, позволяет запускать эксперименты с блокировкой сторонних
-ресурсов и формирует JSON- и Markdown-отчёты.
+Расширение Chrome и Firefox (Manifest V3) для локального аудита Core Web Vitals.
+Собирает LCP, CLS, INP, FCP и TTFB через `web-vitals`, связывает метрики с
+DOM-целями, показывает динамику, позволяет запускать эксперименты с блокировкой
+сторонних ресурсов и формирует JSON- и Markdown-отчёты.
 
 Данные не отправляются на сервер: вся история хранится локально в IndexedDB и
-`chrome.storage.local` текущего браузера.
+`chrome.storage.local` (`browser.storage.local` в Firefox) текущего браузера.
 
 ## Возможности
 
@@ -31,14 +31,15 @@ LCP, CLS, INP, FCP и TTFB через `web-vitals`, связывает метр�
   независимую запись, не перезаписывает существующие и не запускает
   наблюдение; историю можно открывать и удалять.
 - Настройка срока хранения сессий, журнал технических ошибок и очистка истории.
-- Fallback-попап для сборок без Side Panel API (при поддержке Side Panel
-  используется он).
+- Один и тот же интерфейс открывается в Side Panel (Chrome) или в боковой
+  панели `sidebar_action` (Firefox); fallback-попап остаётся для сборок без
+  обоих API.
 
 ## Разрешения
 
 | Разрешение | Зачем нужно |
 | --- | --- |
-| `sidePanel` | Открывать основной интерфейс аудита в Side Panel. |
+| `sidePanel` | Открывать основной интерфейс аудита в Side Panel (только Chrome; Firefox использует `sidebar_action`). |
 | `storage` | Хранить настройки и указатель активной сессии в `chrome.storage.local`. |
 | `activeTab`, `scripting` | Инжектировать мост и MAIN-world коллектор в текущую вкладку по действию пользователя. |
 | `tabs` | Получать `tabId`, перезагружать вкладку для эксперимента и определять активную вкладку. |
@@ -50,9 +51,13 @@ LCP, CLS, INP, FCP и TTFB через `web-vitals`, связывает метр�
 
 - Google Chrome 116 или новее (используются Side Panel и
   `chrome.declarativeNetRequest`).
+- Firefox 142 или новее (MV3 event page, `sidebar_action`, MAIN-world injection,
+  session DNR-правила и `data_collection_permissions`).
 - Node.js 22 (см. `.nvmrc`) и npm. Поддерживаются также 20.19+, 22.13+ и 24+.
 
 ## Установка
+
+Chrome/Chromium:
 
 ```bash
 npm install
@@ -62,13 +67,26 @@ npm run build
 Затем откройте `chrome://extensions`, включите «Режим разработчика» и загрузите
 распакованное расширение из папки `dist/`.
 
-Иконка на панели инструментов открывает Side Panel, в котором ведётся аудит.
+Firefox:
+
+```bash
+npm run build:firefox
+```
+
+Откройте `about:debugging#/runtime/this-firefox` → «Загрузить временное
+дополнение» → выберите `dist-firefox/manifest.json`. Для постоянной установки
+пакет нужно подписать в Mozilla Add-ons; подробности и ограничения —
+[`docs/firefox.md`](docs/firefox.md).
+
+Иконка на панели инструментов открывает Side Panel в Chrome или боковую панель
+в Firefox, в которой ведётся аудит.
 
 ## Разработка
 
 ```bash
 npm run dev        # Vite dev server, порт 5173 (HMR)
-npm run build      # tsc --noEmit + vite build -> dist/
+npm run build      # tsc --noEmit + vite build -> dist/ (Chrome)
+npm run build:firefox  # build + dist-firefox/ с Firefox-манифестом
 npm run typecheck  # проверка типов
 npm test           # unit-тесты (vitest)
 npm run lint       # ESLint
@@ -89,10 +107,11 @@ Release-артефакт собирается из `dist/` с фиксирова
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify`, E2E,
-accessibility-гейт и release-проверку на Ubuntu при push, pull request и ручном
-запуске. Собранное расширение публикуется как artifact
-`web-performance-auditor-dist`, а zip с SHA-256 — как
-`web-performance-auditor-release`.
+accessibility-гейт, performance-бюджет и release-проверку на Ubuntu при push,
+pull request и ручном запуске. Отдельным шагом собирается Firefox-пакет
+(`dist-firefox/`). Artifacts: `web-performance-auditor-dist`,
+`web-performance-auditor-firefox` и `web-performance-auditor-release` (zip +
+SHA-256). Release-job зависит от зелёных `e2e` и `perf`.
 
 Исходники инжектируемых скриптов лежат в `src/content/`. Файлы в
 `public/generated/` и `dist/` собираются автоматически (`wpa-injected-scripts`
@@ -122,10 +141,12 @@ HEADLESS=1 npm run test:e2e   # headless-режим
 
 ### Accessibility
 
-`e2e/a11y.mjs` прогоняет axe-core по семнадцати состояниям Side Panel и popup
-(пустые вкладки, ошибка неподдерживаемой страницы, сессия на всех вкладках,
-предпросмотр импорта, импортированная сессия в истории) и дополнительно
-проверяет keyboard-путь: фокус по `Tab` во всех четырёх вкладках, видимое
+`e2e/a11y.mjs` прогоняет axe-core по двадцати трём состояниям Side Panel и
+popup: пустые вкладки, ошибка неподдерживаемой страницы, сессия на всех
+вкладках, предпросмотр импорта, импортированная сессия в истории, inline-
+подтверждение удаления, ошибки импорта и настроек, сохранённые настройки,
+журнал диагностики с записями и сравнение эксперимента. Дополнительно
+проверяется keyboard-путь: фокус по `Tab` во всех четырёх вкладках, видимое
 кольцо фокуса и переключение вкладок стрелками (`ArrowLeft`/`ArrowRight`,
 `Home`/`End`). Сборка падает только на нарушениях `serious`/`critical`; текущий
 результат — 0 нарушений во всех состояниях.
@@ -211,7 +232,7 @@ HEADLESS=1 npm run test:a11y
   "reportVersion": 1,
   "schemaVersion": 2,
   "generatedAt": "2026-10-20T06:30:00.000Z",
-  "tool": { "name": "Web Performance Auditor", "version": "0.2.0" },
+  "tool": { "name": "Web Performance Auditor", "version": "0.3.0" },
   "session": {
     "id": "102e9441-…",
     "tabId": 42,
@@ -288,9 +309,10 @@ HEADLESS=1 npm run test:a11y
   на сессию ограничено (`maxEventsPerSession: 500`,
   `maxMetricsPerSession: 1000`). Диагностические события пишутся пакетами,
   а не отдельной транзакцией на запись.
-- Записи с несовместимой `schemaVersion` не читаются и удаляются при
-  retention-очистке; политика версий и миграций описана в
-  [`docs/storage.md`](docs/storage.md).
+- Поддерживаемые старые записи (`schemaVersion` 1) мигрируют при чтении и
+  записываются обратно в текущую схему. Неизвестные/будущие версии не читаются
+  и удаляются при retention-очистке; реестр миграций и политика версий описаны
+  в [`docs/storage.md`](docs/storage.md).
 - Модель безопасности, отсутствие сетевых отправок и остаточные риски —
   [`SECURITY.md`](SECURITY.md) и
   [`docs/security/privacy-review.md`](docs/security/privacy-review.md).
@@ -309,7 +331,9 @@ HEADLESS=1 npm run test:a11y
 - Оценки Core Web Vitals относятся к измеренным значениям, а не к
   распределению посещений.
 - Не используются Lighthouse или PageSpeed Insights.
-- Поддержка Firefox не реализована.
+- Firefox-версия распространяется как отдельный `dist-firefox/`; для постоянной
+  установки требуется подпись Mozilla. Side Panel заменён на `sidebar_action`,
+  поэтому кнопка на панели инструментов открывает/закрывает боковую панель.
 - Cross-origin iframe не инспектируются.
 
 ## Архитектура
@@ -336,9 +360,12 @@ HEADLESS=1 npm run test:a11y
    Side Panel (React) / Popup fallback      мост + page-script
 ```
 
-1. Background service worker (`src/background/`) — состояние сессии,
-   маршрутизация сообщений, инжекция коллектора, DNR и эксперименты. Все
-   слушатели регистрируются синхронно на верхнем уровне (требование MV3).
+1. Background service worker / event page (`src/background/`) — состояние
+   сессии, маршрутизация сообщений, инжекция коллектора, DNR и эксперименты.
+   Все слушатели регистрируются синхронно на верхнем уровне (требование MV3).
+   Доступ к `chrome.*`/`browser.*` идёт через ленивый прокси
+   `src/browser/api.ts`: Chromium отдаёт `chrome`, Firefox — promise-based
+   `browser`.
 2. Page script (`src/content/page-script.ts`, MAIN world) — `web-vitals`,
    Long Tasks и отправка метрик через `window.postMessage`; не имеет доступа к
    `chrome.*`.

@@ -29,6 +29,7 @@ import {
 } from '../constants/config';
 import { METRIC_THRESHOLDS } from '../constants/thresholds';
 import * as storage from './storage';
+import { extensionApi } from '../browser/api';
 
 export const RESTORE_NAVIGATION_GRACE_MS = 2000;
 
@@ -575,7 +576,7 @@ export class SessionManager {
     // The panel should show the current URL even before an audit starts.
     if (!this.activeTabUrl) {
       try {
-        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const [tab] = await extensionApi.tabs.query({ active: true, lastFocusedWindow: true });
         this.activeTabUrl = tab?.url ?? null;
         if (tab?.id !== undefined && this.activeTabId === null) {
           this.activeTabId = tab.id;
@@ -854,8 +855,8 @@ export class SessionManager {
     if (kind === 'spa') {
       // Old-document overlays are not valid after a SPA transition (FR-05).
       this.overlayStatus = null;
-      if (typeof chrome.tabs.sendMessage === 'function') {
-        const result = chrome.tabs.sendMessage(tabId, { type: 'CLEAR_HIGHLIGHT' });
+      if (typeof extensionApi.tabs.sendMessage === 'function') {
+        const result = extensionApi.tabs.sendMessage(tabId, { type: 'CLEAR_HIGHLIGHT' });
         if (result && typeof result.catch === 'function') {
           void result.catch(() => {
             // The bridge may not be injected yet.
@@ -992,7 +993,7 @@ export class SessionManager {
         return;
       }
 
-      const tab = await chrome.tabs.get(pointer.tabId).catch(() => undefined);
+      const tab = await extensionApi.tabs.get(pointer.tabId).catch(() => undefined);
       const urlCheck = isAuditableUrl(tab?.url);
       if (!tab || !urlCheck.auditable) {
         session.status = 'interrupted';
@@ -1061,20 +1062,21 @@ export class SessionManager {
   }
 
   private async saveActivePointer(pointer: ActiveSessionPointer): Promise<void> {
-    await chrome.storage.local.set({ activeSession: pointer });
+    await extensionApi.storage.local.set({ activeSession: pointer });
   }
 
   private async clearActivePointer(): Promise<void> {
-    await chrome.storage.local.remove('activeSession');
+    await extensionApi.storage.local.remove('activeSession');
   }
 
   private async readActivePointer(): Promise<ActiveSessionPointer | undefined> {
-    const data = await chrome.storage.local.get('activeSession');
+    const data = await extensionApi.storage.local.get('activeSession');
     const pointer = data.activeSession as ActiveSessionPointer | undefined;
+    if (!pointer) return undefined;
     if (
-      !pointer ||
       typeof pointer.id !== 'string' ||
       typeof pointer.tabId !== 'number' ||
+      !Number.isFinite(pointer.tabId) ||
       typeof pointer.url !== 'string' ||
       (pointer.navigationId !== undefined && typeof pointer.navigationId !== 'string') ||
       (pointer.documentToken !== undefined && typeof pointer.documentToken !== 'string') ||
@@ -1084,6 +1086,9 @@ export class SessionManager {
         (typeof pointer.pendingNavigationSince !== 'number' ||
           !Number.isFinite(pointer.pendingNavigationSince)))
     ) {
+      // A damaged pointer would otherwise be re-validated and ignored on every
+      // cold start. Dropping it lets the next restore start from a clean slate.
+      await this.clearActivePointer();
       return undefined;
     }
     return pointer;
@@ -1122,7 +1127,7 @@ export class SessionManager {
   private async broadcastState(): Promise<void> {
     try {
       const state = await this.getState();
-      await chrome.runtime.sendMessage({
+      await extensionApi.runtime.sendMessage({
         type: 'STATE_UPDATE',
         requestId: generateId(),
         state,
@@ -1134,10 +1139,20 @@ export class SessionManager {
 
   private detectBrowser(): { name: string; version?: string } {
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-    const match = ua.match(/Chrome\/(\d+)/);
-    return {
-      name: 'Chrome',
-      version: match?.[1],
-    };
+    // Firefox deliberately omits the `Chrome/` token; Edge and Opera include
+    // both their own token and a Chrome-compatible one, so check them first.
+    const firefox = ua.match(/Firefox\/([\d.]+)/);
+    if (firefox) return { name: 'Firefox', version: firefox[1] };
+
+    const edge = ua.match(/Edg\/([\d.]+)/);
+    if (edge) return { name: 'Edge', version: edge[1] };
+
+    const opera = ua.match(/OPR\/([\d.]+)/);
+    if (opera) return { name: 'Opera', version: opera[1] };
+
+    const chrome = ua.match(/Chrome\/([\d.]+)/);
+    if (chrome) return { name: 'Chrome', version: chrome[1] };
+
+    return { name: 'Unknown' };
   }
 }

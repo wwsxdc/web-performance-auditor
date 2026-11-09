@@ -12,6 +12,7 @@ import {
 } from '../utils/experiment';
 import * as storage from './storage';
 import type { SessionManager } from './session-manager';
+import { extensionApi } from '../browser/api';
 
 interface ExperimentPointer {
   id: string;
@@ -129,13 +130,13 @@ export class ExperimentManager {
       // Stop the old document before the session is replaced. Even if this
       // message is lost, `awaitDocumentCommit` rejects its metrics until the
       // experiment reload commits.
-      await chrome.tabs
+      await extensionApi.tabs
         .sendMessage(baseline.tabId, {
           type: 'COLLECTOR_STOP',
           requestId: generateId(),
         })
         .catch(() => undefined);
-      await chrome.tabs
+      await extensionApi.tabs
         .sendMessage(baseline.tabId, {
           type: 'CLEAR_HIGHLIGHT',
           requestId: generateId(),
@@ -159,7 +160,7 @@ export class ExperimentManager {
       // Do not inject into the old document: its cached metrics would be
       // replayed into the new experiment session. The navigation listener
       // injects the bridge into the freshly reloaded document instead.
-      await chrome.tabs.reload(baseline.tabId);
+      await extensionApi.tabs.reload(baseline.tabId);
 
       return { experiment, session };
     } catch (error) {
@@ -225,7 +226,7 @@ export class ExperimentManager {
     if (experiment.experimentSessionId) {
       await this.sessionManager.endSession(experiment.experimentSessionId, 'completed');
     }
-    await chrome.tabs
+    await extensionApi.tabs
       .sendMessage(experiment.tabId, {
         type: 'COLLECTOR_STOP',
         requestId: generateId(),
@@ -233,7 +234,7 @@ export class ExperimentManager {
       .catch(() => {
         // The tab may already be closed.
       });
-    await chrome.tabs
+    await extensionApi.tabs
       .sendMessage(experiment.tabId, {
         type: 'CLEAR_HIGHLIGHT',
         requestId: generateId(),
@@ -268,7 +269,7 @@ export class ExperimentManager {
     if (experiment.experimentSessionId) {
       await this.sessionManager.endSession(experiment.experimentSessionId, 'interrupted');
     }
-    await chrome.tabs
+    await extensionApi.tabs
       .sendMessage(experiment.tabId, {
         type: 'COLLECTOR_STOP',
         requestId: generateId(),
@@ -276,7 +277,7 @@ export class ExperimentManager {
       .catch(() => {
         // The tab may already be closed.
       });
-    await chrome.tabs
+    await extensionApi.tabs
       .sendMessage(experiment.tabId, {
         type: 'CLEAR_HIGHLIGHT',
         requestId: generateId(),
@@ -327,12 +328,12 @@ export class ExperimentManager {
 
   async purgeRules(): Promise<boolean> {
     try {
-      const rules = await chrome.declarativeNetRequest.getSessionRules();
+      const rules = await extensionApi.declarativeNetRequest.getSessionRules();
       const ids = rules.filter((rule) => rule.id >= RULE_ID_BASE).map((rule) => rule.id);
       if (ids.length > 0) {
-        await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: ids });
+        await extensionApi.declarativeNetRequest.updateSessionRules({ removeRuleIds: ids });
       }
-      const remaining = await chrome.declarativeNetRequest.getSessionRules();
+      const remaining = await extensionApi.declarativeNetRequest.getSessionRules();
       return !remaining.some((rule) => rule.id >= RULE_ID_BASE);
     } catch (error) {
       console.error('[WPA] Failed to purge DNR rules:', error);
@@ -412,7 +413,7 @@ export class ExperimentManager {
 
   private async applyRules(experiment: Experiment): Promise<void> {
     const ids = ruleIds(experiment);
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await extensionApi.declarativeNetRequest.updateSessionRules({
       removeRuleIds: ids,
       addRules: experiment.rules.map((rule) => ({
         id: rule.id,
@@ -429,8 +430,8 @@ export class ExperimentManager {
   private async cleanupRules(experiment: Experiment): Promise<boolean> {
     const ids = ruleIds(experiment);
     try {
-      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: ids });
-      const rules = await chrome.declarativeNetRequest.getSessionRules();
+      await extensionApi.declarativeNetRequest.updateSessionRules({ removeRuleIds: ids });
+      const rules = await extensionApi.declarativeNetRequest.getSessionRules();
       return !rules.some((rule) => ids.includes(rule.id));
     } catch (error) {
       experiment.limitations.push(`Очистка DNR-правил завершилась ошибкой: ${String(error)}`);
@@ -439,15 +440,15 @@ export class ExperimentManager {
   }
 
   private async readPointer(): Promise<ExperimentPointer | undefined> {
-    const stored = await chrome.storage.local.get(EXPERIMENT_POINTER_KEY);
+    const stored = await extensionApi.storage.local.get(EXPERIMENT_POINTER_KEY);
     return stored[EXPERIMENT_POINTER_KEY] as ExperimentPointer | undefined;
   }
 
   private async savePointer(pointer: ExperimentPointer): Promise<void> {
-    await chrome.storage.local.set({ [EXPERIMENT_POINTER_KEY]: pointer });
+    await extensionApi.storage.local.set({ [EXPERIMENT_POINTER_KEY]: pointer });
   }
 
   private async clearPointer(): Promise<void> {
-    await chrome.storage.local.remove(EXPERIMENT_POINTER_KEY);
+    await extensionApi.storage.local.remove(EXPERIMENT_POINTER_KEY);
   }
 }

@@ -121,6 +121,42 @@ async function clickTab(page, label) {
   await sleep(150);
 }
 
+async function clickButton(page, label, { enabledOnly = false } = {}) {
+  return page.evaluate(
+    (text, requireEnabled) => {
+      const button = [...document.querySelectorAll('button')].find(
+        (candidate) =>
+          candidate.textContent?.trim() === text &&
+          (!requireEnabled || !candidate.disabled),
+      );
+      if (!button) return false;
+      button.click();
+      return true;
+    },
+    label,
+    enabledOnly,
+  );
+}
+
+async function replaceNumber(page, selector, value) {
+  // React tracks the native value setter, so a plain `value = ...` assignment
+  // would be ignored. Dispatch the same input event a user edit produces.
+  await page.evaluate(
+    (target, next) => {
+      const input = document.querySelector(target);
+      if (!(input instanceof HTMLInputElement)) return;
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(input, String(next));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+    selector,
+    value,
+  );
+}
+
 async function main() {
   if (!existsSync(path.join(dist, 'manifest.json'))) {
     throw new Error('dist/ не собран. Сначала выполните npm run build.');
@@ -235,6 +271,116 @@ async function main() {
         await clickTab(panel, 'Данные');
         await sleep(400);
         await audit(panel, 'side panel: импортированная сессия в истории');
+      }
+    }
+
+    // Inline delete confirmation is only rendered after the user asks to
+    // delete a history row; the destructive action itself is not taken.
+    await clickTab(panel, 'Данные');
+    if (await clickButton(panel, 'Удалить', { enabledOnly: true })) {
+      await sleep(150);
+      await audit(panel, 'side panel: подтверждение удаления сессии');
+      await clickButton(panel, 'Отмена');
+      await sleep(100);
+    }
+
+    // Import error state (invalid JSON) exercises the alert next to the file
+    // input without changing history.
+    const invalidPath = path.join(userDataDir, 'a11y-invalid.json');
+    writeFileSync(invalidPath, '{"reportVersion":');
+    const invalidInput = await panel.$('#wpa-import-file');
+    if (invalidInput) {
+      await invalidInput.uploadFile(invalidPath);
+      await panel
+        .waitForSelector('section[aria-label="Импорт отчёта"] [role="alert"]', {
+          timeout: 10000,
+        })
+        .catch(() => undefined);
+      await audit(panel, 'side panel: ошибка импорта');
+    }
+
+    // Settings validation alert (role="alert") is a different DOM state from
+    // the idle settings panel; the successful save adds a role="status" line.
+    await replaceNumber(panel, '#retention-days', 0);
+    await clickButton(panel, 'Сохранить');
+    await sleep(150);
+    await audit(panel, 'side panel: ошибка настроек');
+    await replaceNumber(panel, '#retention-days', 30);
+    await clickButton(panel, 'Сохранить');
+    await sleep(300);
+    await audit(panel, 'side panel: настройки сохранены');
+
+    // Diagnostics with entries (list items plus the refresh/clear controls).
+    await send('LOG_DIAGNOSTIC', {
+      scope: 'a11y',
+      message: 'Проверка журнала диагностики',
+    });
+    if (await clickButton(panel, 'Обновить')) {
+      await panel
+        .waitForFunction(
+          () => document.body.innerText.includes('Проверка журнала диагностики'),
+          { timeout: 10000 },
+        )
+        .catch(() => undefined);
+      await audit(panel, 'side panel: журнал диагностики с записями');
+    }
+
+    // Completed experiment comparison. Seeding IndexedDB directly avoids
+    // reloading the page and applying real DNR rules during the audit gate.
+    const experimentSession = (await send('GET_STATE'))?.state?.session;
+    if (experimentSession?.id) {
+      const seeded = await panel
+        .evaluate(async (session) => {
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('wpa-store');
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const experiment = {
+            id: 'a11y-experiment',
+            schemaVersion: 2,
+            baselineSessionId: session.id,
+            tabId: session.tabId,
+            url: session.url,
+            createdAt: Date.now(),
+            startedAt: Date.now(),
+            endedAt: Date.now(),
+            status: 'completed',
+            preset: 'custom',
+            domains: ['cdn.example.net'],
+            rules: [],
+            baselineValues: { LCP: 3000, CLS: 0.1, INP: 200, FCP: 1200, TTFB: 200 },
+            experimentValues: { LCP: 2000, CLS: 0.08, INP: 150, FCP: 1000, TTFB: 150 },
+            comparison: [
+              { name: 'LCP', baseline: 3000, experiment: 2000, absolute: -1000, relativePercent: -33.3 },
+              { name: 'CLS', baseline: 0.1, experiment: 0.08, absolute: -0.02, relativePercent: -20 },
+              { name: 'INP', baseline: 200, experiment: 150, absolute: -50, relativePercent: -25 },
+              { name: 'FCP', baseline: 1200, experiment: 1000, absolute: -200, relativePercent: -16.7 },
+              { name: 'TTFB', baseline: 200, experiment: 150, absolute: -50, relativePercent: -25 },
+            ],
+            limitations: ['Сравнение не является прогнозом улучшения'],
+            cleanupVerified: true,
+            cleanupStatus: 'completed',
+          };
+          const tx = db.transaction('experiments', 'readwrite');
+          tx.objectStore('experiments').put(experiment);
+          await new Promise((resolve, reject) => {
+            tx.oncomplete = () => resolve(undefined);
+            tx.onerror = () => reject(tx.error);
+          });
+          db.close();
+          return true;
+        }, experimentSession)
+        .catch(() => false);
+
+      if (seeded) {
+        await panel.reload({ waitUntil: 'domcontentloaded' });
+        await panel.waitForSelector('#root');
+        await sleep(700);
+        await clickTab(panel, 'Эксперименты');
+        await sleep(200);
+        await audit(panel, 'side panel: сравнение эксперимента');
+        await clickTab(panel, 'Данные');
       }
     }
 

@@ -10,6 +10,7 @@ import {
   isTargetAnchorIntact,
   type TargetAnchor,
 } from '../utils/target-anchor';
+import { extensionApi } from '../browser/api';
 
 const WPA_PREFIX = 'WPA_';
 const BRIDGE_GLOBAL_KEY = '__WPA_BRIDGE_ACTIVE__';
@@ -60,7 +61,7 @@ function notifyOverlayStatus(
   reason?: string,
   metricName?: string,
 ): void {
-  chrome.runtime
+  extensionApi.runtime
     .sendMessage({
       type: 'OVERLAY_STATUS',
       requestId: generateId(),
@@ -326,7 +327,7 @@ if (!isAlreadyActive()) {
 
     switch (data.type) {
       case 'WPA_METRIC':
-        chrome.runtime
+        extensionApi.runtime
           .sendMessage({
             type: 'METRIC_UPDATE',
             requestId: generateId(),
@@ -352,7 +353,7 @@ if (!isAlreadyActive()) {
         break;
 
       case 'WPA_EVENT':
-        chrome.runtime
+        extensionApi.runtime
           .sendMessage({
             type: 'EVENT_UPDATE',
             requestId: generateId(),
@@ -372,7 +373,7 @@ if (!isAlreadyActive()) {
         break;
 
       case 'WPA_COLLECTOR_READY':
-        chrome.runtime
+        extensionApi.runtime
           .sendMessage({
             type: 'COLLECTOR_STATUS',
             requestId: generateId(),
@@ -388,7 +389,7 @@ if (!isAlreadyActive()) {
         break;
 
       case 'WPA_COLLECTOR_ERROR':
-        chrome.runtime
+        extensionApi.runtime
           .sendMessage({
             type: 'COLLECTOR_STATUS',
             requestId: generateId(),
@@ -404,9 +405,9 @@ if (!isAlreadyActive()) {
   });
 
   // Background -> page commands. Only allowlisted commands are forwarded.
-  chrome.runtime.onMessage.addListener(
+  extensionApi.runtime.onMessage.addListener(
     (message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
-      if (sender.id !== chrome.runtime.id) return false;
+      if (sender.id !== extensionApi.runtime.id) return false;
       if (typeof message !== 'object' || message === null) return false;
 
       switch ((message as { type?: unknown }).type) {

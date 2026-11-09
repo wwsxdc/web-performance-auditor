@@ -7,6 +7,7 @@ import { logDiagnostic } from './diagnostics';
 import { injectCollector } from './injector';
 import { isAuditableUrl } from '../utils/url';
 import { PAGE_COLLECTOR_SCRIPT_ID, PAGE_SCRIPT_FILE } from '../constants/config';
+import { extensionApi, getSidebarAction, toggleSidebar } from '../browser/api';
 
 // All listeners registered synchronously at top level (MV3 requirement)
 const sessionManager = new SessionManager();
@@ -17,7 +18,7 @@ const experimentManager = new ExperimentManager(sessionManager);
 // (content script) is still injected on demand on SESSION_START.
 async function ensurePageCollector(): Promise<void> {
   try {
-    await chrome.scripting.registerContentScripts([{
+    await extensionApi.scripting.registerContentScripts([{
       id: PAGE_COLLECTOR_SCRIPT_ID,
       js: [PAGE_SCRIPT_FILE],
       matches: ['http://*/*', 'https://*/*'],
@@ -72,19 +73,29 @@ function restoreAndReinject(): Promise<void> {
 
 void ensurePageCollector();
 
-// Primary surface: Side Panel on action click. Browsers/builds without the
-// Side Panel API fall back to a regular action popup (FR-16, NFR 4.5).
+// Primary surface: Side Panel on action click. Firefox has no Side Panel API,
+// so the toolbar button toggles the `sidebar_action` declared in the Firefox
+// manifest. Builds without either surface keep the popup fallback (FR-16,
+// NFR 4.5).
 function configurePrimarySurface(): void {
-  if (chrome.sidePanel?.setPanelBehavior) {
-    chrome.sidePanel
+  if (extensionApi.sidePanel?.setPanelBehavior) {
+    extensionApi.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
       .catch(console.error);
     return;
   }
 
-  if (chrome.action?.setPopup) {
+  const sidebar = getSidebarAction();
+  if (sidebar) {
+    extensionApi.action?.onClicked?.addListener(() => {
+      void toggleSidebar(sidebar);
+    });
+    return;
+  }
+
+  if (extensionApi.action?.setPopup) {
     Promise.resolve(
-      chrome.action.setPopup({ popup: 'src/popup/index.html' }),
+      extensionApi.action.setPopup({ popup: 'src/popup/index.html' }),
     ).catch((error) => {
       console.warn('[WPA] Failed to register popup fallback:', error);
     });
@@ -94,7 +105,7 @@ function configurePrimarySurface(): void {
 configurePrimarySurface();
 
 // Handle all extension messages
-chrome.runtime.onMessage.addListener(
+extensionApi.runtime.onMessage.addListener(
   (message, sender, sendResponse) => {
     void (async () => {
       // Restore first so message handling (e.g. CLEAR_HISTORY) never races the
@@ -107,7 +118,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 // Handle tab closure
-chrome.tabs.onRemoved.addListener((tabId) => {
+extensionApi.tabs.onRemoved.addListener((tabId) => {
   void (async () => {
     await experimentManager.cancelForTab(tabId);
     await sessionManager.endSessionForTab(tabId);
@@ -115,7 +126,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // Document navigation: keep one audit session and add a document segment.
-chrome.webNavigation.onCommitted.addListener((details) => {
+extensionApi.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0) return;
 
   void (async () => {
@@ -137,7 +148,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 
 // SPA (History API and hash) navigations are recorded separately and never
 // create synthetic document-load metrics.
-chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+extensionApi.webNavigation.onHistoryStateUpdated.addListener((details) => {
   if (details.frameId === 0) {
     void sessionManager
       .handleNavigation(details.tabId, details.url, 'spa')
@@ -145,7 +156,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
   }
 });
 
-chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
+extensionApi.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
   if (details.frameId === 0) {
     void sessionManager
       .handleNavigation(details.tabId, details.url, 'spa')
@@ -154,33 +165,35 @@ chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
 });
 
 // Retry bridge injection if the document was not ready at commit time.
-chrome.webNavigation.onDOMContentLoaded.addListener((details) => {
+extensionApi.webNavigation.onDOMContentLoaded.addListener((details) => {
   if (details.frameId === 0) {
     void reinjectIfActive(details.tabId).catch(console.error);
   }
 });
 
-chrome.webNavigation.onCompleted.addListener((details) => {
+extensionApi.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId === 0) {
     void reinjectIfActive(details.tabId).catch(console.error);
   }
 });
 
 // Restore state after service worker restart
-chrome.runtime.onStartup.addListener(() => {
+extensionApi.runtime.onStartup.addListener(() => {
   void restoreAndReinject().catch(console.error);
 });
 
 // On install: ensure the collector is registered. Retention cleanup is handled
 // by the memoized restore path so it never runs twice per service worker.
-chrome.runtime.onInstalled.addListener(() => {
+extensionApi.runtime.onInstalled.addListener(() => {
   console.log('[WPA] Extension installed/updated');
   void ensurePageCollector();
 });
 
 // Best effort: persist buffered diagnostic events before the worker is
 // suspended. Lifecycle operations (stop, navigation, reset) flush explicitly.
-chrome.runtime.onSuspend.addListener(() => {
+// Firefox event pages do not expose onSuspend; the guard keeps registration
+// harmless there.
+extensionApi.runtime.onSuspend?.addListener(() => {
   void sessionManager.flushEvents().catch(console.error);
 });
 

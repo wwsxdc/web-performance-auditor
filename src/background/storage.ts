@@ -1,10 +1,11 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { AuditSession, ImportedReportSource, SessionSummary } from '../types/session';
+import type { AuditSession, SessionSummary, StoredSession } from '../types/session';
 import type { MetricRecord } from '../types/metrics';
 import type { DiagnosticEvent } from '../types/events';
 import type { Experiment } from '../types/experiment';
 import type { ImportBundle } from '../utils/report-import';
 import { SCHEMA_VERSION, STORAGE_LIMITS } from '../constants/config';
+import { migrateStoredExperiment, migrateStoredSession } from './migrations';
 
 const DB_NAME = 'wpa-store';
 const DB_VERSION = 3;
@@ -64,32 +65,112 @@ function getDb(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
-export interface StoredSession {
-  id: string;
-  schemaVersion: number;
-  origin?: 'imported';
-  importedFrom?: ImportedReportSource;
-  tabId: number;
-  documentId?: string;
-  url: string;
-  startedAt: number;
-  endedAt?: number;
-  status: string;
-  browser: { name: string; version?: string };
-  navigations: Array<{
-    id: string;
-    sessionId: string;
-    url: string;
-    kind: 'document' | 'spa';
-    startedAt: number;
-    endedAt?: number;
-    source?: string;
-  }>;
-  experimentIds: string[];
+function storedId(record: unknown): string | undefined {
+  if (typeof record !== 'object' || record === null) return undefined;
+  const id = (record as { id?: unknown }).id;
+  return typeof id === 'string' ? id : undefined;
 }
 
-function hasSupportedSchemaVersion(record: { schemaVersion?: unknown }): boolean {
-  return record.schemaVersion === SCHEMA_VERSION;
+function needsMigration(record: unknown): boolean {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    (record as { schemaVersion?: unknown }).schemaVersion !== SCHEMA_VERSION
+  );
+}
+
+type VersionedRecord = { schemaVersion?: unknown };
+
+/**
+ * Writes a migrated snapshot only if the stored record is still on an old
+ * schema. The check runs inside the same transaction as the write, so a
+ * concurrent save (SessionManager/ExperimentManager) either wins before us —
+ * making the stored version current and skipping the write — or overwrites the
+ * migration afterwards. This keeps an old read from resurrecting stale status.
+ */
+async function writeMigratedSessions(
+  db: IDBPDatabase,
+  sessions: StoredSession[],
+): Promise<void> {
+  if (sessions.length === 0) return;
+  const tx = db.transaction('sessions', 'readwrite');
+  for (const session of sessions) {
+    const current = (await tx.store.get(session.id)) as VersionedRecord | undefined;
+    if (current && current.schemaVersion !== SCHEMA_VERSION) {
+      await tx.store.put(session);
+    }
+  }
+  await tx.done;
+}
+
+async function writeMigratedExperiments(
+  db: IDBPDatabase,
+  experiments: Experiment[],
+): Promise<void> {
+  if (experiments.length === 0) return;
+  const tx = db.transaction('experiments', 'readwrite');
+  for (const experiment of experiments) {
+    const current = (await tx.store.get(experiment.id)) as VersionedRecord | undefined;
+    if (current && current.schemaVersion !== SCHEMA_VERSION) {
+      await tx.store.put(experiment);
+    }
+  }
+  await tx.done;
+}
+
+/**
+ * Reads one session through the migration registry and writes supported older
+ * records back in the current schema. Write-through keeps later list scans from
+ * repeating the same work and makes the upgrade observable in storage.
+ */
+async function readSessionRecord(
+  db: IDBPDatabase,
+  sessionId: string,
+): Promise<StoredSession | undefined> {
+  const raw = await db.get('sessions', sessionId);
+  const session = migrateStoredSession(raw);
+  if (!session) return undefined;
+  if (needsMigration(raw)) await writeMigratedSessions(db, [session]);
+  return session;
+}
+
+async function readAllSessionRecords(db: IDBPDatabase): Promise<StoredSession[]> {
+  const raw = (await db.getAll('sessions')) as unknown[];
+  const sessions: StoredSession[] = [];
+  const migrated: StoredSession[] = [];
+  for (const record of raw) {
+    const session = migrateStoredSession(record);
+    if (!session) continue;
+    sessions.push(session);
+    if (needsMigration(record)) migrated.push(session);
+  }
+  await writeMigratedSessions(db, migrated);
+  return sessions;
+}
+
+async function readExperimentRecord(
+  db: IDBPDatabase,
+  experimentId: string,
+): Promise<Experiment | undefined> {
+  const raw = await db.get('experiments', experimentId);
+  const experiment = migrateStoredExperiment(raw);
+  if (!experiment) return undefined;
+  if (needsMigration(raw)) await writeMigratedExperiments(db, [experiment]);
+  return experiment;
+}
+
+async function readAllExperimentRecords(db: IDBPDatabase): Promise<Experiment[]> {
+  const raw = (await db.getAll('experiments')) as unknown[];
+  const experiments: Experiment[] = [];
+  const migrated: Experiment[] = [];
+  for (const record of raw) {
+    const experiment = migrateStoredExperiment(record);
+    if (!experiment) continue;
+    experiments.push(experiment);
+    if (needsMigration(record)) migrated.push(experiment);
+  }
+  await writeMigratedExperiments(db, migrated);
+  return experiments;
 }
 
 export async function saveSession(session: AuditSession): Promise<void> {
@@ -124,64 +205,35 @@ export async function saveExperiment(experiment: Experiment): Promise<void> {
   await db.put('experiments', experiment);
 }
 
-function normalizeExperiment(experiment: Experiment): Experiment {
-  // Experiments created before domains were persisted have no array; the
-  // setup comparer and the UI both iterate it.
-  const normalized: Experiment = Array.isArray(experiment.domains)
-    ? experiment
-    : { ...experiment, domains: [] };
-  const status = normalized.cleanupStatus;
-  if (status === 'pending' || status === 'completed' || status === 'failed') {
-    return normalized;
-  }
-  // Records created before cleanupStatus was introduced have no value.
-  return {
-    ...normalized,
-    cleanupStatus: normalized.status === 'running' ? 'pending' : 'completed',
-  };
-}
-
 export async function getExperiment(experimentId: string): Promise<Experiment | undefined> {
   const db = await getDb();
-  const experiment = (await db.get('experiments', experimentId)) as Experiment | undefined;
-  return experiment && hasSupportedSchemaVersion(experiment)
-    ? normalizeExperiment(experiment)
-    : undefined;
+  return readExperimentRecord(db, experimentId);
 }
 
 export async function getAllExperiments(): Promise<Experiment[]> {
   const db = await getDb();
-  const experiments = (await db.getAll('experiments')) as Experiment[];
-  return experiments
-    .filter(hasSupportedSchemaVersion)
-    .map(normalizeExperiment)
-    .sort((left, right) => right.createdAt - left.createdAt);
+  const experiments = await readAllExperimentRecords(db);
+  return experiments.sort((left, right) => right.createdAt - left.createdAt);
 }
 
 export async function getExperimentsForSession(sessionId: string): Promise<Experiment[]> {
   const db = await getDb();
-  const asBaseline = await db.getAllFromIndex(
-    'experiments',
-    'by-baseline-session',
-    sessionId,
-  ) as Experiment[];
-  const asResult = await db.getAllFromIndex(
-    'experiments',
-    'by-experiment-session',
-    sessionId,
-  ) as Experiment[];
-  const unique = new Map<string, Experiment>();
-  for (const experiment of [...asBaseline, ...asResult]) {
-    if (!hasSupportedSchemaVersion(experiment)) continue;
-    unique.set(experiment.id, normalizeExperiment(experiment));
-  }
-  return [...unique.values()].sort((left, right) => right.createdAt - left.createdAt);
+  // Scanning the (bounded) experiment store also finds v1 records whose
+  // baseline/result ids were not indexed yet.
+  const experiments = await readAllExperimentRecords(db);
+  return experiments
+    .filter(
+      (experiment) =>
+        experiment.baselineSessionId === sessionId ||
+        experiment.experimentSessionId === sessionId,
+    )
+    .sort((left, right) => right.createdAt - left.createdAt);
 }
 
 export async function getSession(sessionId: string): Promise<AuditSession | undefined> {
   const db = await getDb();
-  const session = await db.get('sessions', sessionId) as StoredSession | undefined;
-  if (!session || !hasSupportedSchemaVersion(session)) return undefined;
+  const session = await readSessionRecord(db, sessionId);
+  if (!session) return undefined;
 
   const metrics = await db.getAllFromIndex('metrics', 'by-session', sessionId) as MetricRecord[];
   const events = await db.getAllFromIndex('events', 'by-session', sessionId) as DiagnosticEvent[];
@@ -192,10 +244,9 @@ export async function getSession(sessionId: string): Promise<AuditSession | unde
 
   return {
     ...session,
-    status: session.status as AuditSession['status'],
     metrics,
     events,
-  } as AuditSession;
+  };
 }
 
 export async function getSessionMetrics(sessionId: string): Promise<MetricRecord[]> {
@@ -217,8 +268,7 @@ export async function countMetrics(sessionId: string): Promise<number> {
 
 export async function getAllSessions(): Promise<StoredSession[]> {
   const db = await getDb();
-  const sessions = await db.getAll('sessions') as StoredSession[];
-  return sessions.filter(hasSupportedSchemaVersion);
+  return readAllSessionRecords(db);
 }
 
 export class ImportLimitError extends Error {
@@ -241,13 +291,10 @@ export class DuplicateImportError extends Error {
  */
 export async function getSessionSummaries(limit = STORAGE_LIMITS.maxSessions): Promise<SessionSummary[]> {
   const db = await getDb();
-  const sessions = (await db.getAll('sessions') as StoredSession[])
-    .filter(hasSupportedSchemaVersion)
+  const sessions = (await readAllSessionRecords(db))
     .sort((left, right) => right.startedAt - left.startedAt)
     .slice(0, Math.max(0, limit));
-  const experiments = ((await db.getAll('experiments')) as Experiment[]).filter(
-    hasSupportedSchemaVersion,
-  );
+  const experiments = await readAllExperimentRecords(db);
   const experimentCounts = new Map<string, number>();
   for (const experiment of experiments) {
     for (const sessionId of [experiment.baselineSessionId, experiment.experimentSessionId]) {
@@ -377,16 +424,40 @@ export async function cleanOldSessions(
 ): Promise<number> {
   const db = await getDb();
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-  const sessions = await db.getAllFromIndex('sessions', 'by-date') as StoredSession[];
-  const allExperiments = (await db.getAll('experiments')) as Experiment[];
-  // Records written by an incompatible schema are unreadable by design; drop
-  // them during retention so they can never resurrect a running experiment.
-  for (const experiment of allExperiments) {
-    if (!hasSupportedSchemaVersion(experiment)) {
-      await db.delete('experiments', experiment.id);
+  let deleted = 0;
+
+  // Migrate supported experiments first, then drop records from unknown/future
+  // schemas. They are unreadable by design and must never protect a session or
+  // resurrect a running experiment.
+  const experiments: Experiment[] = [];
+  for (const record of (await db.getAll('experiments')) as unknown[]) {
+    const experiment = migrateStoredExperiment(record);
+    if (!experiment) {
+      const id = storedId(record);
+      if (id) await db.delete('experiments', id);
+      continue;
     }
+    experiments.push(experiment);
+    if (needsMigration(record)) await writeMigratedExperiments(db, [experiment]);
   }
-  const experiments = allExperiments.filter(hasSupportedSchemaVersion);
+
+  const sessions: StoredSession[] = [];
+  for (const record of (await db.getAllFromIndex('sessions', 'by-date')) as unknown[]) {
+    const session = migrateStoredSession(record);
+    if (!session) {
+      const id = storedId(record);
+      if (id) {
+        await deleteSession(id);
+        deleted++;
+      }
+      continue;
+    }
+    sessions.push(session);
+    // SessionManager.restore() runs concurrently with startup retention. The
+    // conditional write inside the helper lets its fresher record win.
+    if (needsMigration(record)) await writeMigratedSessions(db, [session]);
+  }
+
   // Protect every session referenced by an experiment (running or completed),
   // otherwise retention would cascade-delete a finished experiment and lose its
   // result. Explicit deletions still cascade through deleteSession().
@@ -403,15 +474,12 @@ export async function cleanOldSessions(
       .flatMap((experiment) => [experiment.baselineSessionId, experiment.experimentSessionId])
       .filter((id): id is string => typeof id === 'string'),
   );
-  let deleted = 0;
 
   for (const session of sessions) {
-    const supported = hasSupportedSchemaVersion(session);
     if (
-      !supported ||
-      (session.startedAt < cutoff &&
-        session.status !== 'active' &&
-        !protectedSessionIds.has(session.id))
+      session.startedAt < cutoff &&
+      session.status !== 'active' &&
+      !protectedSessionIds.has(session.id)
     ) {
       await deleteSession(session.id);
       deleted++;
@@ -420,20 +488,17 @@ export async function cleanOldSessions(
 
   // Also enforce max sessions limit without deleting the session that is
   // currently being audited.
-  const allSessions = await db.getAll('sessions') as StoredSession[];
+  const allSessions = await readAllSessionRecords(db);
   let excess = allSessions.length - STORAGE_LIMITS.maxSessions;
   if (excess > 0) {
     const remaining = new Set(allSessions.map((session) => session.id));
     const statusById = new Map(allSessions.map((session) => [session.id, session.status]));
-    const supportedById = new Map(
-      allSessions.map((session) => [session.id, hasSupportedSchemaVersion(session)]),
-    );
     const sorted = [...allSessions].sort((a, b) => a.startedAt - b.startedAt);
 
     const canDelete = (id: string): boolean =>
       remaining.has(id) &&
-      (!supportedById.get(id) ||
-        (statusById.get(id) !== 'active' && !runningSessionIds.has(id)));
+      statusById.get(id) !== 'active' &&
+      !runningSessionIds.has(id);
 
     for (const session of sorted) {
       if (excess <= 0) break;

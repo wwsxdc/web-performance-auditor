@@ -1,4 +1,5 @@
 import { STORAGE_LIMITS } from '../constants/config';
+import { extensionApi } from '../browser/api';
 
 export interface ExtensionSettings {
   retentionDays: number;
@@ -18,7 +19,7 @@ export function normalizeRetentionDays(value: unknown): number {
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
-  const stored = await chrome.storage.local.get(SETTINGS_KEY);
+  const stored = await extensionApi.storage.local.get(SETTINGS_KEY);
   const value = stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined;
   return {
     retentionDays: normalizeRetentionDays(value?.retentionDays),
@@ -29,6 +30,6 @@ export async function updateRetentionDays(value: number): Promise<ExtensionSetti
   const settings: ExtensionSettings = {
     retentionDays: normalizeRetentionDays(value),
   };
-  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  await extensionApi.storage.local.set({ [SETTINGS_KEY]: settings });
   return settings;
 }

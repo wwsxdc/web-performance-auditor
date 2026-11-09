@@ -11,6 +11,7 @@ import { startAudit } from './start-audit';
 import { getSettings, updateRetentionDays } from './settings';
 import { cleanOldSessions } from './storage';
 import { clearDiagnostics, getDiagnostics, logDiagnostic } from './diagnostics';
+import { extensionApi } from '../browser/api';
 
 export function handleMessage(
   message: unknown,
@@ -25,7 +26,7 @@ export function handleMessage(
   }
 
   // Messages from content scripts and extension pages must belong to us.
-  if (sender.id && sender.id !== chrome.runtime.id) {
+  if (sender.id && sender.id !== extensionApi.runtime.id) {
     sendResponse({ error: 'Unauthorized sender' });
     return;
   }
@@ -49,7 +50,7 @@ export function handleMessage(
             const session = await sessionManager.getSessionById(message.sessionId);
             await sessionManager.endSession(message.sessionId, 'completed');
             if (session) {
-              await chrome.tabs
+              await extensionApi.tabs
                 .sendMessage(session.tabId, {
                   type: 'COLLECTOR_STOP',
                   requestId: generateId(),
@@ -99,7 +100,7 @@ export function handleMessage(
             break;
           }
           try {
-            const response = await chrome.tabs.sendMessage(message.tabId, message) as
+            const response = await extensionApi.tabs.sendMessage(message.tabId, message) as
               | { available?: boolean; reason?: string }
               | undefined;
             const available = response?.available === true;
@@ -128,7 +129,7 @@ export function handleMessage(
             sendResponse({ error: 'Нет активной сессии для этой вкладки' });
             break;
           }
-          await chrome.tabs
+          await extensionApi.tabs
             .sendMessage(message.tabId, {
               type: 'CLEAR_HIGHLIGHT',
               metricName: message.metricName,
@@ -335,7 +336,7 @@ export function handleMessage(
             ? await sessionManager.getSessionById(activeSessionId)
             : undefined;
           if (activeSession) {
-            await chrome.tabs
+            await extensionApi.tabs
               .sendMessage(activeSession.tabId, {
                 type: 'COLLECTOR_STOP',
                 requestId: generateId(),
@@ -385,7 +386,7 @@ async function handleSessionStart(
   sendResponse: (r: unknown) => void,
 ): Promise<void> {
   const result = await startAudit(message.tabId, {
-    getTab: (tabId) => chrome.tabs.get(tabId),
+    getTab: (tabId) => extensionApi.tabs.get(tabId),
     startSession: (tabId, url) => sessionManager.startSession(tabId, url),
     injectCollector,
     endSession: (sessionId, status) => sessionManager.endSession(sessionId, status),

@@ -1,6 +1,6 @@
 # QA-матрица Chrome (P2.2)
 
-Дата: 2026-11-07
+Дата: 2026-11-09
 
 ## Окружение
 
@@ -8,9 +8,10 @@
 | --- | --- |
 | ОС | Windows 11 |
 | Автоматические прогоны | Chrome for Testing 155.0.8059.79 (headless) |
-| Сборка | `dist/` из `main`, `v0.2.0` |
-| E2E | `HEADLESS=1 npm run test:e2e` — 47/47 PASS |
-| Accessibility | `HEADLESS=1 npm run a11y` — 17/17 PASS |
+| Сборка | `dist/` из `main`, `v0.3.0` |
+| E2E | `HEADLESS=1 npm run e2e` — 47/47 PASS |
+| Accessibility | `HEADLESS=1 npm run a11y` — 23/23 PASS |
+| Performance | `HEADLESS=1 npm run bench` — PASS (+6,5 % TaskDuration, +0,47 МБ heap) |
 | Release | `npm run package` + `npm run verify:release` — PASS |
 
 Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 137 брендовая
@@ -19,7 +20,7 @@ Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 
 release-артефакта проверяется `verify:release`: zip распаковывается, грузится
 как unpacked-расширение, side panel рендерится. Ручная установка zip в
 стабильном Chrome через `chrome://extensions` остаётся шагом релиз-процесса
-(см. `docs/releases/v0.2.0.md`).
+(см. `docs/releases/v0.3.0.md`).
 
 ## Функциональная матрица
 
@@ -57,7 +58,8 @@ release-артефакта проверяется `verify:release`: zip расп
 | permission-denied | `ErrorView` с объяснением и предложением проверить разрешения | unit-тест `start-audit.test.ts` + code review |
 | unsupported page | `ErrorView`, кнопка «Аудит» остаётся доступной | E2E |
 | Повреждённая запись IndexedDB | `getState` перехватывает ошибку чтения, отдаёт остальное состояние и текст ошибки | unit-тест `keeps the app state usable...` |
-| Несовместимая `schemaVersion` | Записи не читаются и удаляются retention-очисткой | unit-тесты storage |
+| Старая `schemaVersion` (v1) | Запись мигрирует при чтении и записывается обратно; конкурентная запись не перезаписывается старым снапшотом | unit-тесты `migrations.test.ts`, `storage.test.ts` |
+| Неизвестная/будущая `schemaVersion` | Записи не читаются и удаляются retention-очисткой | unit-тесты storage |
 
 ## Ограничения матрицы
 

@@ -3,6 +3,41 @@
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.0] — 2026-11-09
+
+### Добавлено
+
+- Firefox-адаптер: общий кросс-браузерный слой `src/browser/api.ts` выбирает
+  `browser` (Firefox) или `chrome` (Chromium), отдельный
+  `manifest.firefox.json`, event page с `background.scripts` + `type: "module"`
+  и `sidebar_action` вместо Side Panel. Кнопка на панели инструментов
+  открывает/закрывает боковую панель; popup остаётся fallback.
+- Сборка `npm run build:firefox` → `dist-firefox/` с проверкой версии,
+  background-скриптов, HTML-страниц, иконок и отсутствия Chrome-only полей.
+- CI собирает и публикует Firefox-пакет как artifact
+  `web-performance-auditor-firefox`.
+- Реестр миграций записей `src/background/migrations.ts`: поддерживаемые
+  старые `schemaVersion` переводятся в текущую схему при чтении с write-through
+  в `getSession`, `getAllSessions`, `getSessionSummaries`, `getExperiment`,
+  `getAllExperiments`, `getExperimentsForSession` и `cleanOldSessions`.
+  v1 → v2 восстанавливает документный сегмент из `navigationId`, нормализует
+  browser, массивы и статусы.
+- Performance-бюджет коллектора вынесен в отдельный CI job `perf`; release
+  зависит от `e2e` и `perf`.
+- Углублённые тесты восстановления: закрытая вкладка, повреждённый указатель,
+  ротация `documentToken`, SPA-навигация во время restore и восстановление
+  сессии под старой схемой.
+- Accessibility-гейт расширен до 23 состояний: inline-подтверждение удаления,
+  ошибки импорта и настроек, сохранённые настройки, журнал диагностики с
+  записями, сравнение эксперимента.
+
+### Изменено
+
+- `docs/storage.md` описывает реестр миграций, write-through и обработку
+  неизвестных версий; добавлен `docs/firefox.md`.
+- Повреждённый указатель активной сессии удаляется при `restore()`, а не
+  перепроверяется при каждом холодном старте.
+
 ## [0.2.0] — 2026-11-07
 
 ### Добавлено
@@ -141,6 +176,7 @@ Vitals.
   при явной ошибке API.
 - Permission-denied сценарий проверен кодом, но не автоматизирован.
 
+[0.3.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.3.0
 [0.2.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.2.0
 [0.1.2]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.2
 [0.1.1]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.1

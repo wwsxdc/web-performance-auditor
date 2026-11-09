@@ -1,7 +1,7 @@
 export const SCHEMA_VERSION = 2;
 export const REPORT_VERSION = 1;
 export const EXTENSION_NAME = 'Web Performance Auditor';
-export const EXTENSION_VERSION = '0.2.0';
+export const EXTENSION_VERSION = '0.3.0';
 
 export const STORAGE_LIMITS = {
   maxSessions: 50,

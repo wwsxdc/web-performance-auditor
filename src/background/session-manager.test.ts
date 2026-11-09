@@ -39,12 +39,64 @@ beforeEach(() => {
 
 afterEach(async () => {
   await storage.clearAllData();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 const rawId = (id: string): string => id.slice(id.indexOf(':') + 1);
 
+function putRawSession(value: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('wpa-store');
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('sessions', 'readwrite');
+      tx.objectStore('sessions').put(value);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 describe('SessionManager', () => {
+  it.each([
+    {
+      ua: 'Mozilla/5.0 (Windows NT 10.0; rv:159.0) Gecko/20100101 Firefox/159.0',
+      name: 'Firefox',
+      version: '159.0',
+    },
+    {
+      ua: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/159.0.0.0 Safari/537.36 Edg/159.0.0.0',
+      name: 'Edge',
+      version: '159.0.0.0',
+    },
+    {
+      ua: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/159.0.0.0 Safari/537.36 OPR/120.0.0.0',
+      name: 'Opera',
+      version: '120.0.0.0',
+    },
+    {
+      ua: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/159.0.0.0 Safari/537.36',
+      name: 'Chrome',
+      version: '159.0.0.0',
+    },
+    { ua: 'Node.js/22', name: 'Unknown', version: undefined },
+  ])('labels the session browser as $name', async ({ ua, name, version }) => {
+    vi.stubGlobal('navigator', { userAgent: ua });
+    const manager = new SessionManager();
+
+    const session = await manager.startSession(1, 'https://example.com/');
+
+    expect(session.browser).toEqual({ name, version });
+  });
+
   it('keeps every metric update and sorts the session by observedAt', async () => {
     const manager = new SessionManager();
     const session = await manager.startSession(1, 'https://example.com/');
@@ -410,6 +462,139 @@ describe('SessionManager', () => {
 
     expect(localStore.has('activeSession')).toBe(false);
     expect((await manager.getState()).session).toBeNull();
+  });
+
+  it('drops a malformed pointer instead of retrying it on every cold start', async () => {
+    localStore.set('activeSession', { id: 'broken-session' });
+
+    const manager = new SessionManager();
+    await manager.restore();
+
+    expect(localStore.has('activeSession')).toBe(false);
+    expect((await manager.getState()).session).toBeNull();
+  });
+
+  it('interrupts a restored session when its tab was closed while the worker slept', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/');
+    await first.addMetric({ id: 'm1', name: 'LCP', value: 1200, observedAt: 1000 }, 1);
+    chromeMock.tabs.get.mockRejectedValueOnce(new Error('No tab with id: 1'));
+
+    const restored = new SessionManager();
+    await restored.restore();
+
+    const report = await restored.generateReport(session.id);
+    expect(report?.session.status).toBe('interrupted');
+    expect(report?.metrics).toHaveLength(1);
+    expect(localStore.has('activeSession')).toBe(false);
+    expect(restored.isActiveForTab(1)).toBe(false);
+  });
+
+  it('keeps the restored document token and rejects the retired one after rotation', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/');
+    await first.addMetric(
+      { id: 'm1', name: 'LCP', value: 1200, observedAt: 1000 },
+      1,
+      'doc-a',
+    );
+
+    const restored = new SessionManager();
+    await restored.restore();
+
+    // The document that was already open before the restart still owns the
+    // restored token.
+    await restored.addMetric(
+      { id: 'm2', name: 'INP', value: 150, observedAt: 2000 },
+      1,
+      'doc-a',
+    );
+    // A reload while the worker was asleep legitimately rotates the token.
+    await restored.addMetric(
+      { id: 'm3', name: 'INP', value: 180, observedAt: 3000 },
+      1,
+      'doc-b',
+    );
+    // Late callbacks from the retired document must never resurface.
+    await restored.addMetric(
+      { id: 'm4', name: 'INP', value: 999, observedAt: 4000 },
+      1,
+      'doc-a',
+    );
+    await restored.addMetric(
+      { id: 'm5', name: 'CLS', value: 0.05, observedAt: 5000 },
+      1,
+      'doc-b',
+    );
+
+    const report = await restored.generateReport(session.id);
+    expect(report?.metrics.map((metric) => rawId(metric.id))).toEqual([
+      'm1',
+      'm2',
+      'm3',
+      'm5',
+    ]);
+  });
+
+  it('restores and writes back a session stored under the v1 schema', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/legacy');
+    const pointer = localStore.get('activeSession') as {
+      navigationId?: string;
+      tabId: number;
+    };
+    await putRawSession({
+      id: session.id,
+      schemaVersion: 1,
+      tabId: 1,
+      url: 'https://example.com/legacy',
+      startedAt: session.startedAt,
+      status: 'active',
+      browser: 'Chrome',
+      navigationId: pointer.navigationId,
+    });
+
+    const restored = new SessionManager();
+    await restored.restore();
+
+    const state = await restored.getState();
+    expect(state.session?.id).toBe(session.id);
+    expect(state.session?.schemaVersion).toBe(2);
+    expect(state.session?.status).toBe('active');
+    expect(state.session?.navigations.map((navigation) => navigation.id)).toEqual([
+      pointer.navigationId,
+    ]);
+
+    await restored.addMetric(
+      { id: 'm1', name: 'LCP', value: 1200, observedAt: 1000 },
+      1,
+    );
+
+    const report = await restored.generateReport(session.id);
+    expect(report?.metrics).toHaveLength(1);
+    expect(report?.metrics[0]?.navigationId).toBe(pointer.navigationId);
+  });
+
+  it('applies an SPA navigation queued while restore is still pending', async () => {
+    const first = new SessionManager();
+    const session = await first.startSession(1, 'https://example.com/app');
+
+    const restored = new SessionManager();
+    const restorePromise = restored.restore();
+    const navigated = await restored.handleNavigation(
+      1,
+      'https://example.com/app/settings',
+      'spa',
+    );
+    await restorePromise;
+
+    expect(navigated).toBe(true);
+    const report = await restored.generateReport(session.id);
+    expect(report?.session.navigations.map((navigation) => navigation.kind)).toEqual([
+      'document',
+      'spa',
+    ]);
+    expect(report?.events.filter((event) => event.type === 'spa-navigation')).toHaveLength(1);
   });
 
   it('applies a navigation queued while restore is still pending', async () => {
