@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy policy — Web Performance Auditor</title>
+  <meta name="description" content="Privacy policy for the Web Performance Auditor browser extension." />
+  <link rel="icon" href="icon128.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="./">
+        <img src="icon128.png" alt="" width="32" height="32" />
+        Web Performance Auditor
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="./">Home</a>
+        <a href="https://github.com/wwsxdc/web-performance-auditor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <article>
+      <h1>Privacy policy</h1>
+      <p class="meta">Last updated: 11 November 2026</p>
+
+      <div class="notice">
+        <strong>Short version:</strong> Web Performance Auditor does not collect,
+        transmit, sell, or share personal data. All measurements stay in your
+        browser profile.
+      </div>
+
+      <h2>1. Who we are</h2>
+      <p>
+        Web Performance Auditor is an open-source browser extension maintained at
+        <a href="https://github.com/wwsxdc/web-performance-auditor">github.com/wwsxdc/web-performance-auditor</a>.
+        For privacy questions, open an issue in that repository.
+      </p>
+
+      <h2>2. What the extension stores</h2>
+      <p>
+        The extension works locally. It stores the following data in IndexedDB and
+        <code>storage.local</code> inside your browser profile:
+      </p>
+      <ul>
+        <li>Core Web Vitals values (LCP, CLS, INP, FCP, TTFB) and measurement timestamps.</li>
+        <li>The page URL reduced to <code>origin + pathname</code>; query strings and hashes are removed.</li>
+        <li>DOM attribution data: element selectors, short text snippets, and metric details.</li>
+        <li>Performance events such as Long Tasks and SPA navigations.</li>
+        <li>Experiment configuration and session comparison data.</li>
+        <li>Extension settings and a small diagnostic log (no page content or page URL).</li>
+      </ul>
+
+      <h2>3. What the extension does not do</h2>
+      <ul>
+        <li>It does not send data to any server.</li>
+        <li>It does not use analytics, telemetry, advertising, or crash reporting.</li>
+        <li>It does not use accounts or cloud sync.</li>
+        <li>It does not load remote code, remote fonts, or remote scripts.</li>
+        <li>It does not read pages outside the http/https URLs you audit.</li>
+      </ul>
+
+      <h2>4. Permissions</h2>
+      <p>
+        <code>storage</code> keeps settings and the active session pointer.
+        <code>scripting</code> and <code>webNavigation</code> run the local
+        collector and split a session into page and SPA segments.
+        <code>declarativeNetRequest</code> is used only for session-scoped
+        blocking rules during an experiment. Host permissions for
+        <code>http://*/*</code> and <code>https://*/*</code> are needed to measure
+        pages early. The extension does not request the <code>tabs</code>
+        permission.
+      </p>
+
+      <h2>5. Retention and deletion</h2>
+      <p>
+        History is limited to 50 sessions, 500 events and 1000 metrics per
+        session. Sessions expire after 30 days by default; you can change the
+        retention period in <strong>Data → Settings</strong>. You can delete all
+        stored data at any time from <strong>Data → Clear history</strong>, or by
+        removing the extension.
+      </p>
+
+      <h2>6. Third parties</h2>
+      <p>
+        There are no third-party services, data processors, or trackers. The
+        extension is distributed through Mozilla Add-ons; Mozilla's own privacy
+        practices are described on mozilla.org.
+      </p>
+
+      <h2>7. Children</h2>
+      <p>
+        The extension is a developer tool and is not directed at children. It does
+        not knowingly collect data from anyone.
+      </p>
+
+      <h2>8. Changes</h2>
+      <p>
+        If this policy changes, the updated version will be published at this URL
+        with a new date. Material changes will be noted in the extension release
+        notes.
+      </p>
+
+      <hr />
+
+      <h1 lang="ru">Политика конфиденциальности</h1>
+      <p class="meta" lang="ru">Обновлено: 11 ноября 2026 г.</p>
+
+      <div class="notice" lang="ru">
+        <strong>Коротко:</strong> Web Performance Auditor не собирает, не передаёт,
+        не продаёт и не раскрывает персональные данные. Все измерения остаются в
+        профиле вашего браузера.
+      </div>
+
+      <h2 lang="ru">1. Кто мы</h2>
+      <p lang="ru">
+        Web Performance Auditor — расширение с открытым исходным кодом:
+        <a href="https://github.com/wwsxdc/web-performance-auditor">github.com/wwsxdc/web-performance-auditor</a>.
+        Вопросы о приватности можно задать в Issues этого репозитория.
+      </p>
+
+      <h2 lang="ru">2. Какие данные хранит расширение</h2>
+      <p lang="ru">
+        Расширение работает локально и хранит данные в IndexedDB и
+        <code>storage.local</code> внутри профиля браузера:
+      </p>
+      <ul lang="ru">
+        <li>значения Core Web Vitals (LCP, CLS, INP, FCP, TTFB) и время измерений;</li>
+        <li>URL страницы в виде <code>origin + pathname</code> — query и hash удаляются;</li>
+        <li>данные привязки к DOM: селекторы элементов, короткие текстовые фрагменты и детали метрик;</li>
+        <li>события производительности: Long Tasks и SPA-навигации;</li>
+        <li>конфигурацию экспериментов и данные сравнения сессий;</li>
+        <li>настройки расширения и небольшой журнал диагностики без содержимого страницы и её URL.</li>
+      </ul>
+
+      <h2 lang="ru">3. Чего расширение не делает</h2>
+      <ul lang="ru">
+        <li>Не отправляет данные на серверы.</li>
+        <li>Не использует аналитику, телеметрию, рекламу и отчёты о сбоях.</li>
+        <li>Не требует аккаунта и не синхронизирует данные с облаком.</li>
+        <li>Не загружает удалённый код, шрифты и скрипты.</li>
+        <li>Не читает страницы за пределами http/https-адресов, которые вы аудируете.</li>
+      </ul>
+
+      <h2 lang="ru">4. Разрешения</h2>
+      <p lang="ru">
+        <code>storage</code> хранит настройки и указатель активной сессии.
+        <code>scripting</code> и <code>webNavigation</code> запускают локальный
+        коллектор и делят сессию на документные и SPA-сегменты.
+        <code>declarativeNetRequest</code> используется только для временных
+        правил блокировки в эксперименте. Host permissions для
+        <code>http://*/*</code> и <code>https://*/*</code> нужны для раннего
+        измерения страниц. Разрешение <code>tabs</code> не запрашивается.
+      </p>
+
+      <h2 lang="ru">5. Срок хранения и удаление</h2>
+      <p lang="ru">
+        История ограничена 50 сессиями, 500 событиями и 1000 метриками на сессию.
+        По умолчанию сессии хранятся 30 дней; срок можно изменить в разделе
+        <strong>«Данные» → «Настройки»</strong>. Удалить все данные можно в любой
+        момент через <strong>«Данные» → «Очистить историю»</strong> или удалив
+        расширение.
+      </p>
+
+      <h2 lang="ru">6. Третьи стороны</h2>
+      <p lang="ru">
+        Нет сторонних сервисов, обработчиков данных и трекеров. Расширение
+        распространяется через Mozilla Add-ons; практики Mozilla описаны на
+        mozilla.org.
+      </p>
+
+      <h2 lang="ru">7. Дети</h2>
+      <p lang="ru">
+        Расширение является инструментом разработчика и не адресовано детям.
+        Оно не собирает данные сознательно.
+      </p>
+
+      <h2 lang="ru">8. Изменения</h2>
+      <p lang="ru">
+        Обновлённая политика будет опубликована по этому адресу с новой датой.
+        Существенные изменения будут отмечены в примечаниях к релизу.
+      </p>
+    </article>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <span>Web Performance Auditor · MIT License</span>
+      <a href="https://github.com/wwsxdc/web-performance-auditor">Source code</a>
+    </div>
+  </footer>
+</body>
+</html>

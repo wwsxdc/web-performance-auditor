@@ -121,6 +121,7 @@ jobs:
         uses: browser-actions/setup-chrome@v2
       - run: npm ci --no-audit --no-fund
       - run: npm run package
+      - run: npm run package:source
       - run: npm run verify:release
         env:
           HEADLESS: '1'

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Screenshots review — Web Performance Auditor AMO</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      background: #f0f2f5;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+    p {
+      margin: 0 0 24px;
+      color: #555;
+      font-size: 14px;
+    }
+    .shots {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      max-width: 1000px;
+    }
+    .shot {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+      border: 1px solid #e0e4eb;
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .caption {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: #444;
+      background: #f8f9fb;
+      border-top: 1px solid #e0e4eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>AMO screenshots — 1280×800</h1>
+  <p>5 скриншотов. Одобрите их, и можно подавать в AMO.</p>
+  <div class="shots">
+    <div class="shot"><img src="01-overview.png" alt="Обзор" /><div class="caption">01 — Overview: Core Web Vitals + chart</div></div>
+    <div class="shot"><img src="02-metric-details.png" alt="Детали метрики" /><div class="caption">02 — Metric details: LCP attribution</div></div>
+    <div class="shot"><img src="03-events.png" alt="События" /><div class="caption">03 — Events: Long Tasks, interactions, layout shifts</div></div>
+    <div class="shot"><img src="04-experiments.png" alt="Эксперименты" /><div class="caption">04 — Experiments: baseline vs. experiment comparison</div></div>
+    <div class="shot"><img src="05-data.png" alt="Данные" /><div class="caption">05 — Data: export, import, p75 summary, history</div></div>
+  </div>
+</body>
+</html>

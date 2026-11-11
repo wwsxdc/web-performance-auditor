@@ -55,8 +55,12 @@ function latestOf(names) {
 }
 
 const firefoxPattern = /-firefox-\d+\.\d+\.\d+\.zip$/;
-const chromeNames = archiveNames.filter((name) => !firefoxPattern.test(name));
+const sourcePattern = /-source\.zip$/;
+const chromeNames = archiveNames.filter(
+  (name) => !firefoxPattern.test(name) && !sourcePattern.test(name),
+);
 const firefoxNames = archiveNames.filter((name) => firefoxPattern.test(name));
+const sourceNames = archiveNames.filter((name) => sourcePattern.test(name));
 const chromeName = latestOf(chromeNames);
 if (!chromeName) {
   throw new Error('В release/ нет Chrome-zip. Сначала выполните npm run package.');
@@ -139,6 +143,50 @@ function verifyFirefoxPackage() {
   console.log('FIREFOX PACKAGE PASS: структура, версия и контрольная сумма совпадают.');
 }
 
+function verifySourcePackage() {
+  const name = sourceNames.sort().at(-1);
+  if (!name) return;
+
+  const files = unzipSync(readVerifiedArchive(name));
+  const required = [
+    'package.json',
+    'package-lock.json',
+    'manifest.firefox.json',
+    'vite.config.ts',
+    'src/content/page-script.ts',
+    'src/content/index.ts',
+    'scripts/build-firefox.mjs',
+    'docs/amo/build-instructions.md',
+  ];
+  for (const file of required) {
+    if (!files[file]) throw new Error(`Source-zip: отсутствует ${file}`);
+  }
+
+  for (const file of Object.keys(files)) {
+    if (
+      /^(node_modules|dist|dist-firefox|release|public\/generated|\.git|\.opencode)\//.test(file)
+    ) {
+      throw new Error(`Source-zip: запрещённый путь ${file}`);
+    }
+  }
+
+  const sourcePackage = JSON.parse(Buffer.from(files['package.json']).toString('utf8'));
+  const sourceManifest = JSON.parse(Buffer.from(files['manifest.firefox.json']).toString('utf8'));
+  if (sourcePackage.version !== packageJson.version) {
+    throw new Error(
+      `Source-zip: package.json ${sourcePackage.version} != package.json ${packageJson.version}`,
+    );
+  }
+  if (sourceManifest.version !== packageJson.version) {
+    throw new Error(
+      `Source-zip: manifest.firefox.json ${sourceManifest.version} != ${packageJson.version}`,
+    );
+  }
+
+  console.log(`Source-архив: ${name} (${Object.keys(files).length} файлов, SHA-256 OK)`);
+  console.log('SOURCE PACKAGE PASS: версия, lockfile и build instructions на месте.');
+}
+
 const chromeFiles = unzipSync(readVerifiedArchive(chromeName));
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'wpa-release-profile-'));
 tempDirectories.push(userDataDir);
@@ -155,6 +203,7 @@ try {
   }
 
   verifyFirefoxPackage();
+  verifySourcePackage();
 
   browser = await puppeteer.launch({
     executablePath: findChrome(),

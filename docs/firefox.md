@@ -109,8 +109,10 @@ chaining.
 - Firefox 142+ (`strict_min_version`): нужны MAIN-world инжекция через
   `scripting.executeScript`/`registerContentScripts`, `sidebar_action` в MV3,
   session DNR-правила и `data_collection_permissions` в манифесте.
-- Разрешения: `storage`, `activeTab`, `scripting`, `tabs`, `webNavigation`,
+- Разрешения: `storage`, `activeTab`, `scripting`, `webNavigation`,
   `declarativeNetRequest`, host permissions `http://*/*` и `https://*/*`.
+  `tabs` не запрашивается: `tabId` приходит из `webNavigation`/`scripting`,
+  а URL доступен через host permissions.
 - `sidePanel` в Firefox-манифест не попадает.
 - `browser_specific_settings.gecko.data_collection_permissions.required` =
   `["none"]`: расширение не отправляет данные.

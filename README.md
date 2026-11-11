@@ -42,10 +42,16 @@ DOM-целями, показывает динамику, позволяет за
 | `sidePanel` | Открывать основной интерфейс аудита в Side Panel (только Chrome; Firefox использует `sidebar_action`). |
 | `storage` | Хранить настройки и указатель активной сессии в `chrome.storage.local`. |
 | `activeTab`, `scripting` | Инжектировать мост и MAIN-world коллектор в текущую вкладку по действию пользователя. |
-| `tabs` | Получать `tabId`, перезагружать вкладку для эксперимента и определять активную вкладку. |
 | `webNavigation` | Делить аудит на документные и SPA-сегменты, повторно инжектировать мост после навигации. |
 | `declarativeNetRequest` | Создавать session-scoped правила блокировки для эксперимента. |
 | `host_permissions` `http://*/*`, `https://*/*` | Запускать коллектор на обычных страницах; системные страницы (`chrome://`, `chrome-extension://` и т.п.) не аудируются. |
+
+Разрешение `tabs` намеренно не запрашивается: `tabId` приходит из
+`webNavigation`/`scripting`, а URL доступен через host permissions.
+
+Приватность: расширение не отправляет данные и не использует аналитику.
+Политика конфиденциальности —
+[wwsxdc.github.io/web-performance-auditor/privacy.html](https://wwsxdc.github.io/web-performance-auditor/privacy.html).
 
 ## Требования
 
@@ -100,7 +106,8 @@ npm run test:a11y  # build + a11y
 npm run bench      # benchmark накладных расходов коллектора
 npm run bench:collector  # build + benchmark
 npm run package    # build:firefox + воспроизводимые Chrome/Firefox zip + SHA-256
-npm run verify:release   # загрузить Chrome zip и проверить структуру Firefox zip
+npm run package:source   # source zip для ревью Mozilla Add-ons
+npm run verify:release   # загрузить Chrome zip и проверить структуру Firefox/source zip
 ```
 
 Release-артефакты собираются из `dist/` и `dist-firefox/` с фиксированным mtime,
