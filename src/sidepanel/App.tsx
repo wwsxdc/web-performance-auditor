@@ -15,6 +15,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { ImportReportCard } from './components/ImportReportCard';
 import { SessionHistory } from './components/SessionHistory';
+import { P75Summary } from './components/P75Summary';
 import {
   OverlayControls,
   type ActiveOverlayState,
@@ -297,6 +298,7 @@ export default function App() {
     setSelectedName(null);
     await stopSession();
     await refreshExperiments();
+    refreshHistory();
   };
 
   const handleToggleOverlay = (category: OverlayCategory, enabled: boolean) => {
@@ -557,6 +559,7 @@ export default function App() {
       {showData && (
         <div className="space-y-3">
           <ImportReportCard onImported={handleImported} />
+          <P75Summary revision={historyRevision} />
           <SessionHistory
             revision={historyRevision}
             activeSessionId={session?.id ?? null}

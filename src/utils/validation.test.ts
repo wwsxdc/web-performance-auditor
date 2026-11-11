@@ -267,6 +267,7 @@ describe('isExtensionMessage', () => {
       isExtensionMessage({ type: 'EXPORT_MARKDOWN', requestId: 'e5', sessionId: 's1' }),
     ).toBe(true);
     expect(isExtensionMessage({ type: 'CLEAR_HISTORY', requestId: 'e6' })).toBe(true);
+    expect(isExtensionMessage({ type: 'GET_P75_AGGREGATE', requestId: 'e7' })).toBe(true);
   });
 
   it('rejects unknown and malformed messages', () => {

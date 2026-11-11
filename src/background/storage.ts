@@ -5,7 +5,12 @@ import type { DiagnosticEvent } from '../types/events';
 import type { Experiment } from '../types/experiment';
 import type { ImportBundle } from '../utils/report-import';
 import { SCHEMA_VERSION, STORAGE_LIMITS } from '../constants/config';
-import { migrateStoredExperiment, migrateStoredSession } from './migrations';
+import {
+  inspectStoredExperiment,
+  inspectStoredSession,
+  migrateStoredExperiment,
+  migrateStoredSession,
+} from './migrations';
 
 const DB_NAME = 'wpa-store';
 const DB_VERSION = 3;
@@ -426,25 +431,42 @@ export async function cleanOldSessions(
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   let deleted = 0;
 
-  // Migrate supported experiments first, then drop records from unknown/future
-  // schemas. They are unreadable by design and must never protect a session or
-  // resurrect a running experiment.
+  // Migrate supported experiments first. Unknown/future schema records are
+  // kept in place: this build cannot read them, but deleting them would make a
+  // temporary downgrade destroy data that a newer build still understands.
+  // Only structurally malformed records are dropped.
   const experiments: Experiment[] = [];
+  // Sessions referenced by a running experiment from a newer schema. Retention
+  // cannot migrate that experiment, but deleting its sessions would leave it
+  // dangling once the newer build runs again.
+  const unreadableRunningSessionIds = new Set<string>();
   for (const record of (await db.getAll('experiments')) as unknown[]) {
-    const experiment = migrateStoredExperiment(record);
-    if (!experiment) {
+    const inspection = inspectStoredExperiment(record);
+    if (!inspection.experiment) {
+      if (inspection.kind === 'future' || inspection.kind === 'unsupported') {
+        const raw = record as Record<string, unknown>;
+        if (raw.status === 'running') {
+          for (const key of ['baselineSessionId', 'experimentSessionId']) {
+            if (typeof raw[key] === 'string') unreadableRunningSessionIds.add(raw[key]);
+          }
+        }
+        continue;
+      }
       const id = storedId(record);
       if (id) await db.delete('experiments', id);
       continue;
     }
-    experiments.push(experiment);
-    if (needsMigration(record)) await writeMigratedExperiments(db, [experiment]);
+    experiments.push(inspection.experiment);
+    if (needsMigration(record)) await writeMigratedExperiments(db, [inspection.experiment]);
   }
 
   const sessions: StoredSession[] = [];
   for (const record of (await db.getAllFromIndex('sessions', 'by-date')) as unknown[]) {
-    const session = migrateStoredSession(record);
-    if (!session) {
+    const inspection = inspectStoredSession(record);
+    if (!inspection.session) {
+      // Keep unknown/future records; only drop records that cannot be a
+      // session at all under any known or future schema.
+      if (inspection.kind === 'future' || inspection.kind === 'unsupported') continue;
       const id = storedId(record);
       if (id) {
         await deleteSession(id);
@@ -452,6 +474,7 @@ export async function cleanOldSessions(
       }
       continue;
     }
+    const session = inspection.session;
     sessions.push(session);
     // SessionManager.restore() runs concurrently with startup retention. The
     // conditional write inside the helper lets its fresher record win.
@@ -466,6 +489,10 @@ export async function cleanOldSessions(
       .flatMap((experiment) => [experiment.baselineSessionId, experiment.experimentSessionId])
       .filter((id): id is string => typeof id === 'string'),
   );
+  // Unreadable running experiments cannot be migrated, but their sessions must
+  // survive age-based retention as well; otherwise the newer build would find a
+  // running experiment without its baseline/result.
+  for (const id of unreadableRunningSessionIds) protectedSessionIds.add(id);
   // A running experiment must never be disturbed; finished ones only hold the
   // hard maxSessions bound so the stored count stays bounded.
   const runningSessionIds = new Set(
@@ -474,6 +501,7 @@ export async function cleanOldSessions(
       .flatMap((experiment) => [experiment.baselineSessionId, experiment.experimentSessionId])
       .filter((id): id is string => typeof id === 'string'),
   );
+  for (const id of unreadableRunningSessionIds) runningSessionIds.add(id);
 
   for (const session of sessions) {
     if (
@@ -486,10 +514,14 @@ export async function cleanOldSessions(
     }
   }
 
-  // Also enforce max sessions limit without deleting the session that is
-  // currently being audited.
+  // Enforce the max sessions bound without deleting the session that is
+  // currently being audited. The raw count also includes unreadable
+  // future/unsupported records: those cannot be evicted, so the bound can only
+  // be approximate while such records exist, but readable history is still
+  // trimmed to leave room for them.
   const allSessions = await readAllSessionRecords(db);
-  let excess = allSessions.length - STORAGE_LIMITS.maxSessions;
+  const storedSessionCount = await db.count('sessions');
+  let excess = storedSessionCount - STORAGE_LIMITS.maxSessions;
   if (excess > 0) {
     const remaining = new Set(allSessions.map((session) => session.id));
     const statusById = new Map(allSessions.map((session) => [session.id, session.status]));

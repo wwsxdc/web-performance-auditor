@@ -123,6 +123,7 @@ export type ExtensionMessage =
   | { type: 'EXPORT_MARKDOWN'; requestId: string; sessionId: string; experimentId?: string }
   | { type: 'IMPORT_JSON'; requestId: string; report: unknown }
   | { type: 'GET_SESSION_LIST'; requestId: string }
+  | { type: 'GET_P75_AGGREGATE'; requestId: string }
   | { type: 'SELECT_SESSION'; requestId: string; sessionId: string }
   | { type: 'DELETE_SESSION'; requestId: string; sessionId: string }
   | { type: 'CLEAR_HISTORY'; requestId: string }

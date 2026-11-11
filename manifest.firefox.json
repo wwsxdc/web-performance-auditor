@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web Performance Auditor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Диагностика Core Web Vitals (LCP, CLS, INP, FCP, TTFB) веб-страниц",
   "permissions": [
     "storage",

@@ -1,6 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMA_VERSION } from '../constants/config';
-import { migrateStoredExperiment, migrateStoredSession } from './migrations';
+import {
+  inspectStoredExperiment,
+  inspectStoredSession,
+  migrateStoredExperiment,
+  migrateStoredSession,
+} from './migrations';
+
+describe('migration classification', () => {
+  it('separates readable, future, unsupported and malformed sessions', () => {
+    const current = {
+      id: 'current',
+      schemaVersion: SCHEMA_VERSION,
+      tabId: 1,
+      url: 'https://example.com/',
+      startedAt: 1000,
+      status: 'completed',
+    };
+
+    expect(inspectStoredSession(current)).toMatchObject({
+      kind: 'current',
+      version: SCHEMA_VERSION,
+      session: { id: 'current' },
+    });
+    expect(inspectStoredSession({ ...current, schemaVersion: 1 }).kind).toBe('migrated');
+
+    const future = inspectStoredSession({ ...current, schemaVersion: SCHEMA_VERSION + 1 });
+    expect(future).toMatchObject({ kind: 'future', version: SCHEMA_VERSION + 1 });
+    expect(future.session).toBeUndefined();
+
+    const unsupported = inspectStoredSession({ ...current, schemaVersion: 0 });
+    expect(unsupported).toMatchObject({ kind: 'unsupported', version: 0 });
+    expect(unsupported.session).toBeUndefined();
+
+    expect(inspectStoredSession({ ...current, schemaVersion: '2' }).kind).toBe('invalid');
+    expect(inspectStoredSession({ schemaVersion: SCHEMA_VERSION }).kind).toBe('invalid');
+    expect(inspectStoredSession(null).kind).toBe('invalid');
+  });
+
+  it('classifies experiments with the same policy', () => {
+    const experiment = {
+      id: 'experiment',
+      schemaVersion: SCHEMA_VERSION,
+      baselineSessionId: 'baseline',
+      tabId: 1,
+      url: 'https://example.com/',
+      createdAt: 1000,
+      startedAt: 1100,
+      status: 'completed',
+      preset: 'custom',
+      cleanupStatus: 'completed',
+    };
+
+    expect(inspectStoredExperiment(experiment).kind).toBe('current');
+    expect(inspectStoredExperiment({ ...experiment, schemaVersion: 1 }).kind).toBe('migrated');
+    expect(inspectStoredExperiment({ ...experiment, schemaVersion: SCHEMA_VERSION + 1 }).kind).toBe(
+      'future',
+    );
+    expect(inspectStoredExperiment({ ...experiment, schemaVersion: 0 }).kind).toBe('unsupported');
+    expect(
+      inspectStoredExperiment({ ...experiment, baselineSessionId: undefined }).kind,
+    ).toBe('invalid');
+  });
+});
 
 describe('migrateStoredSession', () => {
   it('upgrades a v1 header with a single navigation id into the current schema', () => {

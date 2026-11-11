@@ -87,31 +87,33 @@ npm run build:firefox
 npm run dev        # Vite dev server, порт 5173 (HMR)
 npm run build      # tsc --noEmit + vite build -> dist/ (Chrome)
 npm run build:firefox  # build + dist-firefox/ с Firefox-манифестом
+npm run lint:firefox   # web-ext lint для dist-firefox/
 npm run typecheck  # проверка типов
 npm test           # unit-тесты (vitest)
 npm run lint       # ESLint
 npm run verify     # typecheck + lint + test + build
 npm run e2e        # E2E по уже собранному dist/
 npm run test:e2e   # build + E2E
+npm run test:e2e:firefox  # build:firefox + Selenium smoke в Firefox
 npm run a11y       # axe-core + keyboard-гейт по собранному dist/
 npm run test:a11y  # build + a11y
 npm run bench      # benchmark накладных расходов коллектора
 npm run bench:collector  # build + benchmark
-npm run package    # build + воспроизводимый zip + SHA-256 в release/
-npm run verify:release   # распаковать zip и загрузить расширение в Chrome
+npm run package    # build:firefox + воспроизводимые Chrome/Firefox zip + SHA-256
+npm run verify:release   # загрузить Chrome zip и проверить структуру Firefox zip
 ```
 
-Release-артефакт собирается из `dist/` с фиксированным mtime, поэтому повторная
-сборка даёт тот же SHA-256.
+Release-артефакты собираются из `dist/` и `dist-firefox/` с фиксированным mtime,
+поэтому повторная сборка даёт тот же SHA-256.
 
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) запускает `npm run verify`, E2E,
-accessibility-гейт, performance-бюджет и release-проверку на Ubuntu при push,
-pull request и ручном запуске. Отдельным шагом собирается Firefox-пакет
-(`dist-firefox/`). Artifacts: `web-performance-auditor-dist`,
-`web-performance-auditor-firefox` и `web-performance-auditor-release` (zip +
-SHA-256). Release-job зависит от зелёных `e2e` и `perf`.
+accessibility-гейт, performance-бюджет, Firefox smoke и release-проверку на
+Ubuntu при push, pull request и ручном запуске. Artifacts:
+`web-performance-auditor-dist`, `web-performance-auditor-firefox` и
+`web-performance-auditor-release` (оба zip + SHA-256). Release-job зависит от
+зелёных `e2e`, `perf` и `firefox`.
 
 Исходники инжектируемых скриптов лежат в `src/content/`. Файлы в
 `public/generated/` и `dist/` собираются автоматически (`wpa-injected-scripts`
@@ -120,14 +122,14 @@ SHA-256). Release-job зависит от зелёных `e2e` и `perf`.
 ### E2E
 
 `e2e/e2e.mjs` запускает Chrome с распакованным `dist/`, поднимает локальный
-fixture-сервер и проверяет 47 сценариев: сбор всех пяти метрик, отсутствие
+fixture-сервер и проверяет 48 сценариев: сбор всех пяти метрик, отсутствие
 фиктивного INP до взаимодействия, attribution, Long Tasks, детали метрики,
 мультиоверлеи, устаревшие/заменённые/перемещённые DOM-цели, авторизацию
 сообщений, документные и SPA-навигации, DNR эксперимента, очистку правил,
 Markdown/JSON, импорт отчёта, отказ от повторного импорта, историю сессий
-(список, открытие, удаление) и очистку истории. Повторные callback одной
-метрики сохраняются как обновления, а в экспорт попадает по одной актуальной
-записи на метрику/сегмент.
+(список, открытие, удаление), p75 по истории и очистку истории. Повторные
+callback одной метрики сохраняются как обновления, а в экспорт попадает по одной
+актуальной записи на метрику/сегмент.
 
 ```bash
 npm run test:e2e
@@ -138,6 +140,19 @@ HEADLESS=1 npm run test:e2e   # headless-режим
 выбирается Chrome for Testing: обычная сборка Chrome игнорирует
 `--load-extension`. Для сценария блокировки используется домен `blocked.test`,
 который резолвится в `127.0.0.1` через `--host-resolver-rules`.
+
+### Firefox smoke
+
+`e2e/firefox.mjs` использует Selenium + geckodriver: устанавливает
+`dist-firefox/` как временное дополнение, открывает панель как вкладку
+`moz-extension://<uuid>/…` из привилегированного Marionette chrome-контекста и
+проверяет 16 сценариев (аудит, метрики, атрибуция, оверлей, эксперимент с
+блокировкой, очистка DNR, экспорт JSON/Markdown, p75, остановка сессии).
+
+```bash
+npm run test:e2e:firefox
+HEADLESS=1 npm run test:e2e:firefox   # CI
+```
 
 ### Accessibility
 
@@ -232,7 +247,7 @@ HEADLESS=1 npm run test:a11y
   "reportVersion": 1,
   "schemaVersion": 2,
   "generatedAt": "2026-10-20T06:30:00.000Z",
-  "tool": { "name": "Web Performance Auditor", "version": "0.3.0" },
+  "tool": { "name": "Web Performance Auditor", "version": "0.4.0" },
   "session": {
     "id": "102e9441-…",
     "tabId": 42,
@@ -327,13 +342,15 @@ HEADLESS=1 npm run test:a11y
 
 ## Ограничения
 
-- Нет сбора поля (RUM) и расчёта p75 по множеству посетителей.
+- Нет сбора поля (RUM). p75 считается только по локальной истории сессий
+  (не более 50) и не заменяет field-данные CrUX.
 - Оценки Core Web Vitals относятся к измеренным значениям, а не к
   распределению посещений.
 - Не используются Lighthouse или PageSpeed Insights.
-- Firefox-версия распространяется как отдельный `dist-firefox/`; для постоянной
-  установки требуется подпись Mozilla. Side Panel заменён на `sidebar_action`,
-  поэтому кнопка на панели инструментов открывает/закрывает боковую панель.
+- Firefox-версия распространяется как `dist-firefox/` и отдельный
+  неподписанный zip в релизе; для постоянной установки требуется подпись
+  Mozilla. Side Panel заменён на `sidebar_action`, поэтому кнопка на панели
+  инструментов открывает/закрывает боковую панель.
 - Cross-origin iframe не инспектируются.
 
 ## Архитектура

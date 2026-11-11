@@ -10,6 +10,7 @@ import { injectCollector } from './injector';
 import { startAudit } from './start-audit';
 import { getSettings, updateRetentionDays } from './settings';
 import { cleanOldSessions } from './storage';
+import { getP75Aggregate } from './aggregate';
 import { clearDiagnostics, getDiagnostics, logDiagnostic } from './diagnostics';
 import { extensionApi } from '../browser/api';
 
@@ -278,6 +279,11 @@ export function handleMessage(
 
         case 'GET_SESSION_LIST': {
           sendResponse({ sessions: await sessionManager.getSessionList() });
+          break;
+        }
+
+        case 'GET_P75_AGGREGATE': {
+          sendResponse({ aggregate: await getP75Aggregate() });
           break;
         }
 

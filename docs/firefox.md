@@ -23,6 +23,16 @@ npm run build:firefox
 разошлись по версии. В CI этот шаг выполняется после `npm run verify`, а
 `dist-firefox/` публикуется как artifact `web-performance-auditor-firefox`.
 
+`npm run package` собирает оба пакета и кладёт в `release/`:
+
+- `web-performance-auditor-<version>.zip` — Chrome;
+- `web-performance-auditor-firefox-<version>.zip` — Firefox.
+
+Оба архива воспроизводимы (отсортированные записи, фиксированный mtime) и
+сопровождаются `.sha256`. `npm run verify:release` загружает Chrome-zip в
+Chrome и структурно проверяет Firefox-zip (версия, `background.scripts`,
+`sidebar_action`, наличие файлов).
+
 Точка входа background — `service-worker-loader.js`, который создаёт
 `@crxjs/vite-plugin` (beta). Firefox загружает его как ES-модуль через
 `background.scripts` + `type: "module"`; если CRXJS перестанет генерировать
@@ -41,6 +51,32 @@ npm run build:firefox
 не устанавливает неподписанные расширения в обычном профиле. Для подписи
 используется `browser_specific_settings.gecko.id`
 (`web-performance-auditor@wwsxdc.github.io`).
+
+## Автоматический smoke
+
+```bash
+npm run build:firefox
+HEADLESS=1 npm run test:e2e:firefox
+```
+
+`e2e/firefox.mjs` использует Selenium + geckodriver:
+
+1. устанавливает `dist-firefox/` как временное дополнение через WebDriver;
+2. находит UUID в `prefs.js` профиля;
+3. открывает панель как настоящую вкладку `moz-extension://<uuid>/...` из
+   привилегированного Marionette chrome-контекста (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`);
+4. прогоняет старт аудита, LCP/CLS/INP/FCP/TTFB, атрибуцию, оверлей,
+   эксперимент с блокировкой `blocked.test`, очистку DNR, экспорт JSON/Markdown,
+   p75 и остановку сессии.
+
+Навигация WebDriver на `moz-extension://` запрещена и в classic, и в BiDi
+режиме, поэтому панель открывается через `gBrowser.addTab` с системным
+principal. Переменные `WPA_FIREFOX_PATH`, `WPA_GECKODRIVER_PATH` и
+`WPA_GECKODRIVER_VERSION` переопределяют бинарники; без них Firefox ищется в
+стандартных путях, а geckodriver скачивается в кэш.
+
+В CI job `firefox` устанавливает Firefox, собирает `dist-firefox/` и запускает
+этот smoke в headless-режиме.
 
 ## Отличия от Chrome
 
@@ -81,14 +117,14 @@ chaining.
 
 ## Ограничения
 
-- Firefox-пакет не проверяется E2E-набором: `e2e/*` использует Puppeteer и
-  Chrome. CI проверяет сборку и структуру пакета; перед публикацией нужен
-  ручной smoke-тест в Firefox (старт аудита, метрики, оверлей, эксперимент,
-  экспорт). Текущий статус проверок и чек-лист — в
+- Автоматический smoke покрывает основные сценарии, но не заменяет ручную
+  проверку открытия/закрытия боковой панели кнопкой на панели инструментов и
+  журнала диагностики. Полный чек-лист и статус прогонов — в
   [`docs/qa/firefox-matrix.md`](qa/firefox-matrix.md).
 - Боковая панель уже Side Panel; на узкой ширине интерфейс переносится по
   правилам адаптивной вёрстки.
 - Поведение `declarativeNetRequest` и кэша может отличаться от Chrome, поэтому
   сравнение эксперимента остаётся измерением, а не гарантией.
 - Профили Chrome и Firefox независимы: история и настройки не синхронизируются.
-- Неподписанный `dist-firefox/` загружается только как временное дополнение.
+- Неподписанный `dist-firefox/` и Firefox-zip загружаются только как временное
+  дополнение до подписи Mozilla.

@@ -227,6 +227,9 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     case 'GET_SESSION_LIST':
       return isString(value.requestId);
 
+    case 'GET_P75_AGGREGATE':
+      return isString(value.requestId);
+
     case 'SELECT_SESSION':
       return isString(value.requestId) && isString(value.sessionId);
 

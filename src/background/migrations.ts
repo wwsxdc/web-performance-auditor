@@ -21,6 +21,38 @@ type RawRecord = Record<string, unknown>;
 
 type RecordMigration = (record: RawRecord) => RawRecord;
 
+/**
+ * Result of looking at a persisted record without assuming it is readable.
+ *
+ * `future` and `unsupported` records are deliberately kept in storage: a newer
+ * tool version may still need them after a downgrade, and an old record with a
+ * missing migration step must not be silently destroyed by retention.
+ */
+export type StoredRecordKind =
+  | 'current'
+  | 'migrated'
+  | 'future'
+  | 'unsupported'
+  | 'invalid';
+
+export interface StoredSessionInspection {
+  kind: StoredRecordKind;
+  session?: StoredSession;
+  /** Version found on disk, when it was a positive integer. */
+  version?: number;
+}
+
+export interface StoredExperimentInspection {
+  kind: StoredRecordKind;
+  experiment?: Experiment;
+  version?: number;
+}
+
+interface MigrationChainResult {
+  kind: 'ok' | 'future' | 'unsupported' | 'invalid';
+  record?: RawRecord;
+}
+
 const SESSION_STATUSES: readonly SessionStatus[] = [
   'active',
   'completed',
@@ -103,19 +135,28 @@ function migrateChain(
   record: RawRecord,
   fromVersion: number,
   migrations: Record<number, RecordMigration>,
-): RawRecord | null {
-  if (!Number.isInteger(fromVersion) || fromVersion < 1 || fromVersion > SCHEMA_VERSION) {
-    return null;
+): MigrationChainResult {
+  if (!Number.isInteger(fromVersion)) {
+    return { kind: 'invalid' };
+  }
+  // Positive versions newer than this build are preserved for a future
+  // release. Non-positive/legacy versions have no registered step and are
+  // preserved too rather than being treated as corrupt.
+  if (fromVersion > SCHEMA_VERSION) {
+    return { kind: 'future' };
+  }
+  if (fromVersion < 1) {
+    return { kind: 'unsupported' };
   }
 
   let working = { ...record };
   for (let version = fromVersion; version < SCHEMA_VERSION; version++) {
     const migrate = migrations[version];
-    if (!migrate) return null;
+    if (!migrate) return { kind: 'unsupported' };
     working = migrate(working);
     working.schemaVersion = version + 1;
   }
-  return working;
+  return { kind: 'ok', record: working };
 }
 
 function normalizeBrowser(value: unknown): { name: string; version?: string } {
@@ -199,13 +240,41 @@ function normalizeNavigations(
  * back to ignoring/dropping them.
  */
 export function migrateStoredSession(record: unknown): StoredSession | null {
-  if (!isRecord(record)) return null;
+  return inspectStoredSession(record).session ?? null;
+}
+
+/**
+ * Classifies a stored session before reading it. Retention uses the kind to
+ * distinguish "unreadable but worth keeping" (future/unsupported schemas) from
+ * genuinely malformed data.
+ */
+export function inspectStoredSession(record: unknown): StoredSessionInspection {
+  if (!isRecord(record)) return { kind: 'invalid' };
   const fromVersion = asFiniteNumber(record.schemaVersion);
-  if (fromVersion === undefined) return null;
+  if (fromVersion === undefined) return { kind: 'invalid' };
 
   const migrated = migrateChain(record, fromVersion, SESSION_MIGRATIONS);
-  if (!migrated) return null;
+  if (migrated.kind === 'future') return { kind: 'future', version: fromVersion };
+  if (migrated.kind === 'unsupported') {
+    return { kind: 'unsupported', version: fromVersion };
+  }
+  if (migrated.kind !== 'ok' || !migrated.record) {
+    return { kind: 'invalid', version: fromVersion };
+  }
 
+  const session = normalizeStoredSession(migrated.record, fromVersion);
+  if (!session) return { kind: 'invalid', version: fromVersion };
+  return {
+    kind: fromVersion === SCHEMA_VERSION ? 'current' : 'migrated',
+    session,
+    version: fromVersion,
+  };
+}
+
+function normalizeStoredSession(
+  migrated: RawRecord,
+  fromVersion: number,
+): StoredSession | null {
   const id = asString(migrated.id);
   const tabId = asFiniteNumber(migrated.tabId);
   const url = asString(migrated.url);
@@ -296,13 +365,37 @@ function normalizeCleanupStatus(
  * defaults, matching the read-time normalisation that predated migrations.
  */
 export function migrateStoredExperiment(record: unknown): Experiment | null {
-  if (!isRecord(record)) return null;
+  return inspectStoredExperiment(record).experiment ?? null;
+}
+
+/** Classifies a stored experiment; see {@link inspectStoredSession}. */
+export function inspectStoredExperiment(record: unknown): StoredExperimentInspection {
+  if (!isRecord(record)) return { kind: 'invalid' };
   const fromVersion = asFiniteNumber(record.schemaVersion);
-  if (fromVersion === undefined) return null;
+  if (fromVersion === undefined) return { kind: 'invalid' };
 
   const migrated = migrateChain(record, fromVersion, EXPERIMENT_MIGRATIONS);
-  if (!migrated) return null;
+  if (migrated.kind === 'future') return { kind: 'future', version: fromVersion };
+  if (migrated.kind === 'unsupported') {
+    return { kind: 'unsupported', version: fromVersion };
+  }
+  if (migrated.kind !== 'ok' || !migrated.record) {
+    return { kind: 'invalid', version: fromVersion };
+  }
 
+  const experiment = normalizeStoredExperiment(migrated.record, fromVersion);
+  if (!experiment) return { kind: 'invalid', version: fromVersion };
+  return {
+    kind: fromVersion === SCHEMA_VERSION ? 'current' : 'migrated',
+    experiment,
+    version: fromVersion,
+  };
+}
+
+function normalizeStoredExperiment(
+  migrated: RawRecord,
+  fromVersion: number,
+): Experiment | null {
   const id = asString(migrated.id);
   const baselineSessionId = asString(migrated.baselineSessionId);
   const tabId = asFiniteNumber(migrated.tabId);

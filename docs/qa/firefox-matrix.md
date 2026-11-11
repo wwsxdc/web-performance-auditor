@@ -1,6 +1,6 @@
-# QA-матрица Firefox (v0.3.0)
+# QA-матрица Firefox (v0.4.0)
 
-Дата: 2026-11-09
+Дата: 2026-11-11
 
 ## Окружение
 
@@ -8,12 +8,38 @@
 | --- | --- |
 | ОС | Windows 11 |
 | Firefox | 159.0.1 |
-| Сборка | `dist-firefox/` из `main`, `v0.3.0` |
+| Сборка | `dist-firefox/` из `main`, `v0.4.0` |
 | Сборка пакета | `npm run build:firefox` — PASS |
-| Валидация | `web-ext lint --source-dir dist-firefox` — 0 ошибок, 2 предупреждения |
-| Установка | `web-ext run` — временное дополнение установлено |
+| Валидация | `npm run lint:firefox` — 0 ошибок, 2 предупреждения |
+| Автоматический smoke | `HEADLESS=1 npm run test:e2e:firefox` — 16/16 PASS |
+| Установка | Selenium `installWebExtension(..., { permanent: false })` |
 
-## Что проверено автоматически
+## Автоматический smoke
+
+`e2e/firefox.mjs` (Selenium + geckodriver) устанавливает временное дополнение и
+открывает `moz-extension://<uuid>/src/sidepanel/index.html` через
+привилегированный Marionette chrome-контекст.
+
+| Проверка | Результат |
+| --- | --- |
+| Установка аддона и совпадение id | PASS |
+| UUID из `prefs.js` | PASS |
+| Панель рендерится с `browser.*` | PASS |
+| Поиск целевой вкладки | PASS |
+| `SESSION_START` | PASS |
+| LCP/CLS/INP/FCP/TTFB | PASS |
+| LCP attribution | PASS |
+| `HIGHLIGHT_TARGET` и shadow-DOM оверлей | PASS |
+| `EXPERIMENT_START` | PASS |
+| Блокировка `blocked.test` после reload | PASS |
+| Метрики experiment-сессии | PASS |
+| `EXPERIMENT_FINISH` и очистка DNR | PASS |
+| Экспорт Markdown | PASS |
+| Экспорт JSON | PASS |
+| p75 по истории | PASS |
+| `SESSION_STOP` | PASS |
+
+## Структура пакета
 
 | Проверка | Результат |
 | --- | --- |
@@ -25,27 +51,18 @@
 | Chrome-only поля (`side_panel`, `minimum_chrome_version`, разрешение `sidePanel`) отсутствуют | PASS |
 | `browser_specific_settings.gecko.id` и `strict_min_version` заданы | PASS |
 | `web-ext lint` | 0 ошибок |
-| Загрузка как temporary add-on | PASS |
+| Воспроизводимый `web-performance-auditor-firefox-<version>.zip` + `.sha256` | PASS |
 
 `web-ext lint` выдаёт два предупреждения `UNSAFE_VAR_ASSIGNMENT` на
 `innerHTML` во внутренностях React-бандла. Они не относятся к коду расширения
 и не блокируют установку.
 
-## Что требует ручной проверки
+## Ручная проверка перед публикацией
 
-Полный runtime smoke в Firefox автоматически не выполнялся: E2E-набор построен
-на Puppeteer и Chrome. Перед публикацией в Mozilla Add-ons нужно вручную
-проверить:
-
-- [ ] старт аудита и появление метрик LCP/CLS/INP/FCP/TTFB;
-- [ ] оверлей и подсветку DOM-цели;
-- [ ] SPA- и документные сегменты навигации;
-- [ ] эксперимент с DNR-правилами и очистку правил после завершения;
-- [ ] экспорт JSON/Markdown и импорт JSON;
 - [ ] открытие/закрытие боковой панели кнопкой на панели инструментов;
-- [ ] журнал диагностики и настройки хранения.
-
-Результаты ручного прогона стоит дополнять в этот файл.
+- [ ] журнал диагностики и настройки хранения;
+- [ ] импорт JSON в Firefox;
+- [ ] визуальная проверка на узкой ширине боковой панели.
 
 ## Ограничения
 

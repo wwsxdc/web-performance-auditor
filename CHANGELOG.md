@@ -3,6 +3,40 @@
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [SemVer](https://semver.org/lang/ru/).
 
+## [0.4.0] — 2026-11-11
+
+### Добавлено
+
+- Автоматический Firefox smoke-тест `e2e/firefox.mjs` (Selenium + geckodriver,
+  16 проверок): установка временного дополнения, панель через
+  `moz-extension://`, старт аудита, пять метрик, атрибуция LCP, оверлей,
+  эксперимент с блокировкой `blocked.test`, очистка DNR, экспорт JSON/Markdown,
+  p75 и остановка сессии. Запуск — `npm run test:e2e:firefox`.
+- В релиз публикуется Firefox-zip `web-performance-auditor-firefox-<version>.zip`
+  рядом с Chrome-архивом; оба воспроизводимы и сопровождаются `.sha256`.
+- p75-агрегация по истории сессий: `GET_P75_AGGREGATE`, nearest-rank p75 по
+  LCP/INP/CLS/FCP/TTFB, одна последняя измеренная точка на сессию, без активных
+  сессий. В UI — раздел «p75 по истории» на вкладке «Данные».
+- CI job `firefox` (setup-firefox + geckodriver) и зависимость релиза от него.
+
+### Изменено
+
+- Retention сохраняет записи с будущей или неизвестной `schemaVersion` вместо
+  удаления; удаляются только структурно повреждённые записи. Это защищает данные
+  при временном откате на более старую сборку.
+- `npm run package` собирает оба пакета (`build:firefox` + `scripts/package.mjs`);
+  `npm run verify:release` загружает Chrome-zip и структурно проверяет Firefox-zip.
+- Классификация записей вынесена в `inspectStoredSession` /
+  `inspectStoredExperiment` (`current` / `migrated` / `future` / `unsupported` /
+  `invalid`).
+
+### Известные ограничения
+
+- Firefox-пакет распространяется неподписанным: постоянная установка требует
+  подписи Mozilla Add-ons.
+- p75 считается по локальной истории (не более 50 сессий) и не заменяет
+  field-данные CrUX.
+
 ## [0.3.0] — 2026-11-09
 
 ### Добавлено
@@ -176,6 +210,7 @@ Vitals.
   при явной ошибке API.
 - Permission-denied сценарий проверен кодом, но не автоматизирован.
 
+[0.4.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.4.0
 [0.3.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.3.0
 [0.2.0]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.2.0
 [0.1.2]: https://github.com/wwsxdc/web-performance-auditor/releases/tag/v0.1.2

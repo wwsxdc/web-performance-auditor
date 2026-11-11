@@ -1,6 +1,6 @@
 # QA-матрица Chrome (P2.2)
 
-Дата: 2026-11-09
+Дата: 2026-11-11
 
 ## Окружение
 
@@ -8,11 +8,11 @@
 | --- | --- |
 | ОС | Windows 11 |
 | Автоматические прогоны | Chrome for Testing 155.0.8059.79 (headless) |
-| Сборка | `dist/` из `main`, `v0.3.0` |
-| E2E | `HEADLESS=1 npm run e2e` — 47/47 PASS |
+| Сборка | `dist/` из `main`, `v0.4.0` |
+| E2E | `HEADLESS=1 npm run e2e` — 48/48 PASS |
 | Accessibility | `HEADLESS=1 npm run a11y` — 23/23 PASS |
-| Performance | `HEADLESS=1 npm run bench` — PASS (+8,5 % TaskDuration, +0,31 МБ heap) |
-| Release | `npm run package` + `npm run verify:release` — PASS |
+| Performance | `HEADLESS=1 npm run bench` — PASS (+4,3…5,0 % TaskDuration, heap в пределах ±0,32 МБ) |
+| Release | `npm run package` + `npm run verify:release` — PASS (Chrome + Firefox zip) |
 
 Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 137 брендовая
 сборка игнорирует `--load-extension`, поэтому автоматизированная матрица
@@ -20,7 +20,7 @@ Chrome stable 156.0.8078.76 установлен, но начиная с Chrome 
 release-артефакта проверяется `verify:release`: zip распаковывается, грузится
 как unpacked-расширение, side panel рендерится. Ручная установка zip в
 стабильном Chrome через `chrome://extensions` остаётся шагом релиз-процесса
-(см. `docs/releases/v0.3.0.md`).
+(см. `docs/releases/v0.4.0.md`).
 
 ## Функциональная матрица
 
@@ -39,6 +39,7 @@ release-артефакта проверяется `verify:release`: zip расп
 | Импорт JSON | `IMPORT_JSON`: новые id, `origin: "imported"`, переназначение ссылок, `active` → `interrupted`, running-эксперимент → `incomplete` без DNR; unit-тесты `report-import.test.ts`, `import-storage.test.ts` | PASS |
 | Повторный импорт | `IMPORT_DUPLICATE`: тот же `session.id` + `generatedAt` отклоняется, история не дублируется | PASS |
 | История сессий | `SESSION_LIST_IMPORTED`, `IMPORT_HISTORY_UI`, `SELECT_IMPORTED_SESSION`, `DELETE_IMPORTED_SESSION` | PASS |
+| p75 по истории | `P75_AGGREGATE` в E2E + unit-тесты `p75.test.ts`; раздел «p75 по истории» на вкладке «Данные» | PASS |
 | Silent `buffered` | Probe `buffered-probe.test.ts` + событие `collector-limitation` (`buffered-unavailable`) | PASS (unit) |
 | Service worker restart | Unit-тесты `restores an active session after a service worker restart`, `keeps a restored experiment gate after a service worker restart`, `interrupts a restored session...` | PASS |
 | Удаление целевого элемента | `STALE_TARGET`, `REPLACED_TARGET`, `MOVED_TARGET` | PASS |
@@ -59,7 +60,7 @@ release-артефакта проверяется `verify:release`: zip расп
 | unsupported page | `ErrorView`, кнопка «Аудит» остаётся доступной | E2E |
 | Повреждённая запись IndexedDB | `getState` перехватывает ошибку чтения, отдаёт остальное состояние и текст ошибки | unit-тест `keeps the app state usable...` |
 | Старая `schemaVersion` (v1) | Запись мигрирует при чтении и записывается обратно; конкурентная запись не перезаписывается старым снапшотом | unit-тесты `migrations.test.ts`, `storage.test.ts` |
-| Неизвестная/будущая `schemaVersion` | Записи не читаются и удаляются retention-очисткой | unit-тесты storage |
+| Неизвестная/будущая `schemaVersion` | Записи не читаются, но retention их сохраняет (только структурно повреждённые удаляются) | unit-тесты `migrations.test.ts`, `storage.test.ts` |
 
 ## Ограничения матрицы
 

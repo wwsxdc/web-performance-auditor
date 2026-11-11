@@ -219,7 +219,7 @@ describe('storage cleanup', () => {
     expect(await getAllSessions()).toHaveLength(1);
   });
 
-  it('reclaims unknown-schema sessions during cleanup even when marked active', async () => {
+  it('keeps unknown-schema sessions during cleanup even when marked active', async () => {
     const legacySession = {
       ...makeSession('legacy-active', Date.now(), 'active'),
       schemaVersion: SCHEMA_VERSION + 1,
@@ -228,12 +228,19 @@ describe('storage cleanup', () => {
 
     const deleted = await cleanOldSessions();
 
-    expect(deleted).toBe(1);
+    // A future schema is unreadable here, but a later (higher-version) build
+    // may still understand it, so retention must not destroy it.
+    expect(deleted).toBe(0);
     expect(await getSession('legacy-active')).toBeUndefined();
+    expect(await getRawRecord('sessions', 'legacy-active')).toMatchObject({
+      id: 'legacy-active',
+      schemaVersion: SCHEMA_VERSION + 1,
+    });
   });
 
-  it('drops an unknown-schema running experiment without deleting its supported session', async () => {
-    const supported = makeSession('supported', Date.now(), 'active');
+  it('keeps an unknown-schema running experiment and its supported session', async () => {
+    const oldStartedAt = Date.now() - 40 * 24 * 60 * 60 * 1000;
+    const supported = makeSession('supported', oldStartedAt, 'completed');
     await saveSession(supported);
     await putRawRecord('experiments', {
       ...makeExperiment('legacy-running', supported.id, 'running'),
@@ -242,9 +249,35 @@ describe('storage cleanup', () => {
 
     const deleted = await cleanOldSessions();
 
+    // The session is past the retention window, but a newer build may still be
+    // running this experiment, so deleting its baseline would corrupt it.
     expect(deleted).toBe(0);
     expect(await getAllExperiments()).toHaveLength(0);
     expect((await getAllSessions()).some((session) => session.id === supported.id)).toBe(true);
+    expect(await getRawRecord('experiments', 'legacy-running')).toMatchObject({
+      id: 'legacy-running',
+      schemaVersion: SCHEMA_VERSION + 1,
+    });
+  });
+
+  it('does not protect an old session of an unknown-schema finished experiment', async () => {
+    const oldStartedAt = Date.now() - 40 * 24 * 60 * 60 * 1000;
+    const finished = makeSession('finished-session', oldStartedAt, 'completed');
+    await saveSession(finished);
+    await putRawRecord('experiments', {
+      ...makeExperiment('legacy-finished', finished.id, 'completed'),
+      schemaVersion: SCHEMA_VERSION + 1,
+    });
+
+    const deleted = await cleanOldSessions();
+
+    // Only running experiments hold their sessions: a finished one must not
+    // pin history forever just because this build cannot read it.
+    expect(deleted).toBe(1);
+    expect((await getAllSessions()).some((session) => session.id === finished.id)).toBe(false);
+    // deleteSession cascades through the raw index, so no dangling future
+    // experiment is left behind.
+    expect(await getRawRecord('experiments', 'legacy-finished')).toBeUndefined();
   });
 
   it('ignores stored records with an unknown schema version', async () => {

@@ -603,8 +603,18 @@ async function main() {
     await panel.waitForFunction(
       () =>
         document.body.innerText.includes('Импорт отчёта') &&
+        document.body.innerText.includes('p75 по истории') &&
         document.body.innerText.includes('История сессий'),
       { timeout: 5000 },
+    );
+    const p75 = await send('GET_P75_AGGREGATE');
+    const lcpP75 = p75?.aggregate?.metrics?.find((metric) => metric.name === 'LCP');
+    check(
+      'P75_AGGREGATE',
+      p75?.aggregate?.sampledSessions >= 2 &&
+        lcpP75?.samples >= 2 &&
+        typeof lcpP75?.p75 === 'number',
+      `sessions=${p75?.aggregate?.sampledSessions ?? 0}, LCP samples=${lcpP75?.samples ?? 0}, p75=${lcpP75?.p75 ?? 'null'}`,
     );
     const dataTab = await panel.evaluate(() => ({
       text: document.body.innerText,
@@ -613,6 +623,7 @@ async function main() {
     check(
       'IMPORT_HISTORY_UI',
       dataTab.text.includes('Импорт отчёта') &&
+        dataTab.text.includes('p75 по истории') &&
         dataTab.text.includes('История сессий') &&
         dataTab.importedBadge,
       `badge=${dataTab.importedBadge}`,
